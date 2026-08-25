@@ -8,7 +8,8 @@ export default function AdminReservationCreatePage() {
   const [params] = useSearchParams();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [vehicleId, setVehicleId] = useState<number | "">(params.get("vehicleId") ? Number(params.get("vehicleId")) : "");
-  const [rentalDate, setRentalDate] = useState(params.get("date") ?? "");
+  const [startDate, setStartDate] = useState(params.get("date") ?? "");
+  const [endDate, setEndDate] = useState(params.get("date") ?? "");
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [phone, setPhone] = useState("");
@@ -29,7 +30,14 @@ export default function AdminReservationCreatePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const canSubmit = vehicleId !== "" && rentalDate && name.trim() && department.trim() && phone.trim() && !submitting;
+  function handleStartDateChange(value: string) {
+    setStartDate(value);
+    // 종료일이 시작일보다 빠르면 함께 밀어준다.
+    setEndDate((prev) => (prev && prev >= value ? prev : value));
+  }
+
+  const canSubmit =
+    vehicleId !== "" && startDate && endDate >= startDate && name.trim() && department.trim() && phone.trim() && !submitting;
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -37,9 +45,10 @@ export default function AdminReservationCreatePage() {
     setError(null);
     setSubmitting(true);
     try {
-      const reservation = await api.post<{ id: number }>("/admin/reservations", {
+      const reservations = await api.post<{ id: number }[]>("/admin/reservations", {
         vehicleId,
-        rentalDate,
+        startDate,
+        endDate,
         name: name.trim(),
         department: department.trim(),
         phone: phone.trim(),
@@ -47,7 +56,7 @@ export default function AdminReservationCreatePage() {
         purpose: purpose.trim() || undefined,
         allowPastDate,
       });
-      navigate(`/admin/reservations/${reservation.id}`, { replace: true });
+      navigate(`/admin/reservations/${reservations[0].id}`, { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "예약 등록 중 오류가 발생했습니다.");
     } finally {
@@ -67,10 +76,17 @@ export default function AdminReservationCreatePage() {
             {vehicles.map((v) => <option key={v.id} value={v.id}>{v.vehicle_name}</option>)}
           </select>
         </div>
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1">이용일 *</label>
-          <input type="date" value={rentalDate} onChange={(e) => setRentalDate(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">시작일 *</label>
+            <input type="date" value={startDate} onChange={(e) => handleStartDateChange(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">종료일 *</label>
+            <input type="date" min={startDate} value={endDate} onChange={(e) => setEndDate(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
         </div>
+        <p className="text-xs text-slate-400 -mt-2">여러 날짜(기간)를 한 번에 등록하려면 종료일을 시작일 이후로 설정하세요.</p>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">이름 *</label>
           <input value={name} onChange={(e) => setName(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />

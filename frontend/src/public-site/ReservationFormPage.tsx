@@ -1,18 +1,23 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import { api, ApiError } from "../shared/api";
-import type { Vehicle, ReservationSummary } from "../shared/types";
+import type { Vehicle, ReservationSummary, CalendarEntry } from "../shared/types";
 import { formatDateKorean } from "../shared/formatters";
+import { addDays, dateRange } from "../shared/dateGrid";
 
 const PHONE_RE = /^[0-9-]{9,14}$/;
+const MAX_DAYS = 7;
+const PRICE_PER_DAY = 50000;
+const WEEKDAY_CODE_BY_INDEX = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"] as const;
 
 export default function ReservationFormPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const vehicleId = Number(params.get("vehicleId"));
-  const date = params.get("date") ?? "";
+  const startDate = params.get("date") ?? "";
 
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
+  const [days, setDays] = useState(1);
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [phone, setPhone] = useState("");
@@ -21,6 +26,11 @@ export default function ReservationFormPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [rangeWarning, setRangeWarning] = useState<string | null>(null);
+
+  const endDate = useMemo(() => addDays(startDate, days - 1), [startDate, days]);
+  const selectedDates = useMemo(() => dateRange(startDate, endDate), [startDate, endDate]);
+  const totalPrice = days * PRICE_PER_DAY;
 
   useEffect(() => {
     api
@@ -29,10 +39,43 @@ export default function ReservationFormPage() {
       .catch(() => setVehicle(null));
   }, [vehicleId]);
 
-  const phoneValid = PHONE_RE.test(phone.trim());
-  const canSubmit = name.trim() && department.trim() && phoneValid && !submitting;
+  // 대여 일수를 늘렸을 때, 늘어난 기간 중 이용 불가/이미 예약된 날짜가 있는지 미리 확인해 안내한다.
+  // (최종 검증은 서버에서 다시 하므로 이건 사용자 편의를 위한 사전 확인일 뿐이다.)
+  useEffect(() => {
+    if (!vehicle || days === 1) {
+      setRangeWarning(null);
+      return;
+    }
+    const months = new Set(selectedDates.map((d) => d.slice(0, 7)));
+    Promise.all(
+      [...months].map((ym) => {
+        const [y, m] = ym.split("-").map(Number);
+        return api.get<CalendarEntry[]>(`/reservations/calendar?year=${y}&month=${m}`);
+      })
+    )
+      .then((results) => {
+        const entries = results.flat();
+        for (const d of selectedDates) {
+          const weekday = WEEKDAY_CODE_BY_INDEX[new Date(d + "T00:00:00Z").getUTCDay()];
+          if (!vehicle.available_weekdays.includes(weekday)) {
+            setRangeWarning(`${formatDateKorean(d)}은(는) ${vehicle.vehicle_name} 이용 가능 요일이 아닙니다.`);
+            return;
+          }
+          const taken = entries.find((e) => e.vehicleId === vehicle.id && e.rentalDate === d);
+          if (taken) {
+            setRangeWarning(`${formatDateKorean(d)}은(는) 이미 예약이 있습니다.`);
+            return;
+          }
+        }
+        setRangeWarning(null);
+      })
+      .catch(() => setRangeWarning(null));
+  }, [vehicle, days, selectedDates]);
 
-  if (!vehicleId || !date) {
+  const phoneValid = PHONE_RE.test(phone.trim());
+  const canSubmit = name.trim() && department.trim() && phoneValid && !submitting && !rangeWarning;
+
+  if (!vehicleId || !startDate) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center text-sm text-slate-500">
         잘못된 접근입니다.{" "}
@@ -54,16 +97,17 @@ export default function ReservationFormPage() {
     setSubmitting(true);
     setError(null);
     try {
-      const reservation = await api.post<ReservationSummary>("/reservations", {
+      const reservations = await api.post<ReservationSummary[]>("/reservations", {
         vehicleId,
-        rentalDate: date,
+        startDate,
+        endDate,
         name: name.trim(),
         department: department.trim(),
         phone: phone.trim(),
         destination: destination.trim() || undefined,
         purpose: purpose.trim() || undefined,
       });
-      navigate("/reserve/complete", { state: { reservation, vehicleName: vehicle?.vehicle_name } });
+      navigate("/reserve/complete", { state: { reservations, vehicleName: vehicle?.vehicle_name } });
     } catch (err) {
       setConfirming(false);
       setError(err instanceof ApiError ? err.message : "예약 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
@@ -72,6 +116,9 @@ export default function ReservationFormPage() {
     }
   }
 
+  const periodLabel =
+    days === 1 ? formatDateKorean(startDate) : `${formatDateKorean(startDate)} ~ ${formatDateKorean(endDate)} (${days}일)`;
+
   if (confirming) {
     return (
       <div>
@@ -79,8 +126,9 @@ export default function ReservationFormPage() {
         <div className="bg-white rounded-2xl border border-slate-200 p-5">
           <p className="text-sm text-slate-600 mb-4">입력하신 정보가 정확한지 확인해주세요.</p>
           <dl className="text-sm divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden mb-5">
-            <Row label="이용일" value={formatDateKorean(date)} />
+            <Row label="대여기간" value={periodLabel} />
             <Row label="차량" value={vehicle?.vehicle_name ?? ""} />
+            <Row label="이용요금" value={`${totalPrice.toLocaleString()}원`} />
             <Row label="이름" value={name} />
             <Row label="실과" value={department} />
             <Row label="전화번호" value={phone} />
@@ -114,16 +162,42 @@ export default function ReservationFormPage() {
       <h2 className="text-lg font-bold text-slate-900 mb-4">예약신청</h2>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-4">
-        <div className="grid grid-cols-2 gap-4 text-sm">
+        <div className="grid grid-cols-2 gap-4 text-sm mb-4">
           <div>
-            <p className="text-slate-400 text-xs mb-1">이용일</p>
-            <p className="font-medium text-slate-900">{formatDateKorean(date)}</p>
+            <p className="text-slate-400 text-xs mb-1">시작일</p>
+            <p className="font-medium text-slate-900">{formatDateKorean(startDate)}</p>
           </div>
           <div>
             <p className="text-slate-400 text-xs mb-1">차량</p>
             <p className="font-medium text-slate-900">{vehicle?.vehicle_name ?? "불러오는 중..."}</p>
           </div>
         </div>
+
+        <label className="block text-sm font-medium text-slate-700 mb-1">대여 일수</label>
+        <div className="flex items-center gap-3 mb-2">
+          <button
+            type="button"
+            onClick={() => setDays((d) => Math.max(1, d - 1))}
+            className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 font-bold disabled:opacity-40"
+            disabled={days <= 1}
+          >
+            −
+          </button>
+          <span className="text-sm font-medium text-slate-900 min-w-[3rem] text-center">{days}일</span>
+          <button
+            type="button"
+            onClick={() => setDays((d) => Math.min(MAX_DAYS, d + 1))}
+            className="w-9 h-9 rounded-lg bg-slate-100 text-slate-700 font-bold disabled:opacity-40"
+            disabled={days >= MAX_DAYS}
+          >
+            +
+          </button>
+          <span className="text-xs text-slate-500">최대 {MAX_DAYS}일까지 신청 가능</span>
+        </div>
+        <p className="text-sm text-slate-700">
+          {periodLabel} · <span className="font-medium text-brand-700">{totalPrice.toLocaleString()}원</span>
+        </p>
+        {rangeWarning && <p className="text-xs text-red-500 mt-2">{rangeWarning}</p>}
       </div>
 
       <form onSubmit={handleReviewSubmit} className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">

@@ -27,3 +27,21 @@ export function shiftMonth(year: number, month: number, delta: number): { year: 
   const total = year * 12 + (month - 1) + delta;
   return { year: Math.floor(total / 12), month: (total % 12) + 1 };
 }
+
+/** "YYYY-MM-DD"에 days일을 더한 날짜 문자열을 반환한다 (순수 날짜 계산, 타임존 영향 없음). */
+export function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  return toDateStr(dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate());
+}
+
+/** start~end(포함) 사이 날짜 문자열 목록. */
+export function dateRange(startDateStr: string, endDateStr: string): string[] {
+  const dates: string[] = [];
+  let cur = startDateStr;
+  while (cur <= endDateStr) {
+    dates.push(cur);
+    cur = addDays(cur, 1);
+  }
+  return dates;
+}

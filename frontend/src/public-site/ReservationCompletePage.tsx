@@ -3,7 +3,7 @@ import type { ReservationSummary } from "../shared/types";
 import { formatDateKorean, STATUS_LABELS } from "../shared/formatters";
 
 interface LocationState {
-  reservation: ReservationSummary;
+  reservations: ReservationSummary[];
   vehicleName?: string;
 }
 
@@ -11,11 +11,17 @@ export default function ReservationCompletePage() {
   const location = useLocation();
   const state = location.state as LocationState | null;
 
-  if (!state?.reservation) {
+  if (!state?.reservations?.length) {
     return <Navigate to="/" replace />;
   }
 
-  const { reservation, vehicleName } = state;
+  const { reservations, vehicleName } = state;
+  const first = reservations[0];
+  const last = reservations[reservations.length - 1];
+  const periodLabel =
+    reservations.length === 1
+      ? formatDateKorean(first.rentalDate)
+      : `${formatDateKorean(first.rentalDate)} ~ ${formatDateKorean(last.rentalDate)} (${reservations.length}일)`;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center">
@@ -26,15 +32,18 @@ export default function ReservationCompletePage() {
       <p className="text-sm text-slate-500 mb-6">관리자 확인 후 예약이 확정됩니다.</p>
 
       <dl className="text-left text-sm divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden mb-4">
-        <Row label="차량명" value={vehicleName ?? String(reservation.vehicleId)} />
-        <Row label="이용일" value={formatDateKorean(reservation.rentalDate)} />
-        <Row label="예약자명" value={reservation.name} />
-        <Row label="실과" value={reservation.department} />
-        <Row label="전화번호" value={reservation.phone} />
-        <Row label="방문지역" value={reservation.destination || "-"} />
-        <Row label="대여목적" value={reservation.purpose || "-"} />
-        <Row label="예약상태" value={STATUS_LABELS[reservation.status]} highlight />
-        <Row label="예약번호" value={reservation.reservationNumber} />
+        <Row label="차량명" value={vehicleName ?? String(first.vehicleId)} />
+        <Row label="대여기간" value={periodLabel} />
+        <Row label="예약자명" value={first.name} />
+        <Row label="실과" value={first.department} />
+        <Row label="전화번호" value={first.phone} />
+        <Row label="방문지역" value={first.destination || "-"} />
+        <Row label="대여목적" value={first.purpose || "-"} />
+        <Row label="예약상태" value={STATUS_LABELS[first.status]} highlight />
+        <Row
+          label="예약번호"
+          value={reservations.length === 1 ? first.reservationNumber : reservations.map((r) => r.reservationNumber).join(", ")}
+        />
       </dl>
 
       <p className="text-xs text-slate-400 mb-6">예약확정 여부는 관리자 확인 후 반영됩니다.</p>
