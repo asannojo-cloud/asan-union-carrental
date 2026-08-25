@@ -89,11 +89,6 @@ export default function HomePage() {
 
   return (
     <div>
-      <p className="text-sm text-slate-600 mb-4">
-        차량을 선택한 뒤, 달력에서 원하는 날짜를 누르면 바로 예약신청으로 이동합니다. 별도의 회원가입이나
-        로그인 없이 바로 신청할 수 있습니다.
-      </p>
-
       {/* 이용요금 · 입금 · 대여기간 · 이용대상 안내 */}
       <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 text-xs text-slate-700 space-y-2.5">
         <p>
