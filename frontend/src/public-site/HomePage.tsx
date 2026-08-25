@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../shared/api";
 import type { Vehicle, CalendarEntry, WeekdayCode } from "../shared/types";
 import { buildMonthGrid, shiftMonth } from "../shared/dateGrid";
-import { todayKST, formatDateKorean, STATUS_LABELS } from "../shared/formatters";
+import { todayKST, formatDateKorean } from "../shared/formatters";
 
 const WEEKDAY_HEADERS = ["일", "월", "화", "수", "목", "금", "토"];
 const WEEKDAY_CODE_BY_INDEX: WeekdayCode[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -34,12 +34,19 @@ export default function HomePage() {
   const [year, setYear] = useState(y);
   const [month, setMonth] = useState(m);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+  const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
   const [entries, setEntries] = useState<CalendarEntry[]>([]);
-  const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.get<Vehicle[]>("/vehicles").then(setVehicles).catch(() => setVehicles([]));
+    api
+      .get<Vehicle[]>("/vehicles")
+      .then((list) => {
+        setVehicles(list);
+        // 처음 접속 시 첫 번째 차량(하모니카)을 기본 선택해 바로 달력을 확인할 수 있게 한다.
+        setSelectedVehicleId((prev) => prev ?? list[0]?.id ?? null);
+      })
+      .catch(() => setVehicles([]));
   }, []);
 
   const loadCalendar = useCallback(() => {
@@ -65,36 +72,54 @@ export default function HomePage() {
   }
 
   const weeks = buildMonthGrid(year, month);
+  const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId) ?? null;
 
   function goMonth(delta: number) {
     const next = shiftMonth(year, month, delta);
     setYear(next.year);
     setMonth(next.month);
-    setSelectedDate(null);
+  }
+
+  function handleDateClick(dateStr: string) {
+    if (!selectedVehicle) return;
+    const status = statusOf(selectedVehicle, dateStr);
+    if (status !== "AVAILABLE") return;
+    navigate(`/reserve?vehicleId=${selectedVehicle.id}&date=${dateStr}`);
   }
 
   return (
     <div>
       <p className="text-sm text-slate-600 mb-4">
-        원하는 날짜의 차량 예약현황을 확인하고 간편하게 예약하세요. 별도의 회원가입이나 로그인 없이 바로
-        신청할 수 있습니다.
+        차량을 선택한 뒤, 달력에서 원하는 날짜를 누르면 바로 예약신청으로 이동합니다. 별도의 회원가입이나
+        로그인 없이 바로 신청할 수 있습니다.
       </p>
 
-      {/* 차량 안내 (PRD 35절) */}
+      {/* 차량 선택 (PRD 35절 — 누른 차량이 아래 달력에 표시되고, 날짜를 누르면 예약이 진행된다) */}
       <div className="grid grid-cols-2 gap-3 mb-5">
-        {vehicles.map((v) => (
-          <div key={v.id} className="bg-emerald-50 rounded-xl border border-emerald-100 p-3">
-            <p className="font-bold text-slate-900 text-sm">🚗 {v.vehicle_name}</p>
-            <p className="text-xs text-slate-500 mt-1">
-              {v.available_weekdays.length >= 7 ? "평일 · 주말 이용 가능" : "주말 이용 가능"}
-            </p>
-          </div>
-        ))}
+        {vehicles.map((v) => {
+          const active = v.id === selectedVehicleId;
+          return (
+            <button
+              key={v.id}
+              onClick={() => setSelectedVehicleId(v.id)}
+              className={`text-left rounded-xl border p-3 transition ${
+                active
+                  ? "bg-pink-100 border-brand-500 ring-1 ring-brand-500"
+                  : "bg-pink-50 border-pink-100 hover:bg-pink-100/60"
+              }`}
+            >
+              <p className="font-bold text-slate-900 text-sm">🚗 {v.vehicle_name}</p>
+              <p className="text-xs text-slate-500 mt-1">
+                {v.available_weekdays.length >= 7 ? "평일 · 주말 이용 가능" : "주말 이용 가능"}
+              </p>
+            </button>
+          );
+        })}
       </div>
 
-      {/* 캘린더 */}
+      {/* 캘린더 — 위에서 선택한 차량의 예약현황만 표시한다 */}
       <div className="bg-white rounded-2xl border border-slate-200 p-3 sm:p-4">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-1">
           <button onClick={() => goMonth(-1)} className="px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">
             ‹ 이전 달
           </button>
@@ -105,6 +130,9 @@ export default function HomePage() {
             다음 달 ›
           </button>
         </div>
+        {selectedVehicle && (
+          <p className="text-center text-xs text-brand-600 font-medium mb-2">🚗 {selectedVehicle.vehicle_name} 예약현황</p>
+        )}
 
         <div className="grid grid-cols-7 text-center text-[11px] text-slate-400 mb-1">
           {WEEKDAY_HEADERS.map((w) => (
@@ -116,31 +144,20 @@ export default function HomePage() {
           {weeks.flat().map((dateStr, i) => {
             if (!dateStr) return <div key={i} />;
             const day = Number(dateStr.slice(-2));
-            const isSelected = selectedDate === dateStr;
             const isToday = dateStr === today;
+            const s = selectedVehicle ? statusOf(selectedVehicle, dateStr) : "PAST";
+            const reservable = selectedVehicle !== null && s === "AVAILABLE";
             return (
               <button
                 key={dateStr}
-                onClick={() => setSelectedDate(dateStr)}
-                className={`rounded-lg p-1 flex flex-col items-center gap-0.5 border transition ${
-                  isSelected ? "border-brand-500 ring-1 ring-brand-500" : "border-transparent"
-                } ${isToday ? "bg-brand-50" : ""}`}
+                onClick={() => handleDateClick(dateStr)}
+                disabled={!reservable}
+                className={`rounded-lg py-1.5 flex flex-col items-center gap-1 border transition ${
+                  isToday ? "border-brand-300" : "border-transparent"
+                } ${reservable ? "cursor-pointer hover:ring-1 hover:ring-brand-400" : "cursor-not-allowed"}`}
               >
                 <span className="text-xs text-slate-700">{day}</span>
-                <div className="flex flex-col gap-0.5 w-full">
-                  {vehicles.map((v) => {
-                    const s = statusOf(v, dateStr);
-                    return (
-                      <span
-                        key={v.id}
-                        className={`text-[8px] leading-tight rounded px-0.5 truncate ${CELL_STYLE[s]}`}
-                        title={`${v.vehicle_name}: ${CELL_LABEL[s]}`}
-                      >
-                        {v.vehicle_name[0]} {CELL_LABEL[s]}
-                      </span>
-                    );
-                  })}
-                </div>
+                <span className={`text-[9px] leading-tight rounded px-1 py-0.5 ${CELL_STYLE[s]}`}>{CELL_LABEL[s]}</span>
               </button>
             );
           })}
@@ -163,37 +180,8 @@ export default function HomePage() {
         </span>
       </div>
 
-      {/* 선택한 날짜 상세 (PRD 8절 예약신청 진입점) */}
-      {selectedDate && (
-        <div className="bg-white rounded-2xl border border-slate-200 p-4 mt-4">
-          <p className="font-bold text-slate-900 mb-3">{formatDateKorean(selectedDate)}</p>
-          <div className="space-y-2">
-            {vehicles.map((v) => {
-              const s = statusOf(v, selectedDate);
-              const reservable = s === "AVAILABLE";
-              return (
-                <div key={v.id} className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl p-3">
-                  <div>
-                    <p className="font-medium text-slate-900 text-sm">{v.vehicle_name}</p>
-                    <p className={`text-xs mt-0.5 ${CELL_STYLE[s]} inline-block px-2 py-0.5 rounded-full`}>
-                      {STATUS_LABELS[s] ?? CELL_LABEL[s]}
-                    </p>
-                  </div>
-                  <button
-                    disabled={!reservable}
-                    onClick={() => navigate(`/reserve?vehicleId=${v.id}&date=${selectedDate}`)}
-                    className="text-sm font-medium bg-brand-900 text-white rounded-lg px-4 py-2 disabled:bg-slate-200 disabled:text-slate-400"
-                  >
-                    예약신청
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       <div className="bg-white rounded-2xl border border-slate-200 p-4 mt-4 text-xs text-slate-500 space-y-1">
+        <p>· 위에서 차량을 선택한 뒤, 달력에서 "예약가능" 날짜를 누르면 바로 예약신청 화면으로 이동합니다.</p>
         <p>· 예약신청 후 관리자 확인을 거쳐 예약이 확정됩니다.</p>
         <p>· 예약신청 상태에서도 다른 사용자의 중복예약은 제한됩니다.</p>
         <p>· 예약 관련 문의는 아산시공무원노동조합으로 문의해주세요.</p>
