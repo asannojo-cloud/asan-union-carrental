@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+/* 브랜드 색상: 신뢰감 있는 남색/청록 계열 (공공기관/노동조합 서비스 톤 — PRD 52절). */
+@theme {
+  --color-brand-50: #eef5f7;
+  --color-brand-100: #d3e5ea;
+  --color-brand-200: #a7cbd5;
+  --color-brand-300: #74acbb;
+  --color-brand-400: #468da0;
+  --color-brand-500: #2c7086;
+  --color-brand-600: #205a6e;
+  --color-brand-700: #1a4759;
+  --color-brand-800: #163a48;
+  --color-brand-900: #123039;
+
+  /* 예약상태 색상 — 색상만으로 구분하지 않고 항상 텍스트를 함께 표시한다 (PRD 33절). */
+  --color-status-available: #16a34a;
+  --color-status-pending: #ea580c;
+  --color-status-confirmed: #2563eb;
+  --color-status-cancelled: #6b7280;
+}
+
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    font-family: "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", "Apple Color Emoji", "Segoe UI Emoji",
+      "Noto Color Emoji", sans-serif;
+    background-color: #f3f4f6;
+    color: #111827;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
+}
