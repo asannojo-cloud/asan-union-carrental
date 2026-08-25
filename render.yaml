@@ -3,7 +3,9 @@ services:
     name: asan-union-carrental
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    # NODE_ENV=production이 설정되어 있으면 Render가 npm install 시 devDependencies(vite,
+    # typescript 등 빌드에 필요한 패키지)를 건너뛰어 빌드가 실패한다 — 명시적으로 포함시킨다.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run start
     envVars:
       - key: NODE_ENV
