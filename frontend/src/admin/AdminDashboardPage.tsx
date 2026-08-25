@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../shared/api";
 import { STATUS_LABELS } from "../shared/formatters";
+import { vehicleTheme } from "../shared/vehicleColors";
 
 interface DashboardData {
   today: string;
@@ -43,29 +44,45 @@ export default function AdminDashboardPage() {
           <p className="text-sm text-slate-400">오늘 예약이 없습니다.</p>
         ) : (
           <ul className="space-y-2">
-            {data.todayReservations.map((r) => (
-              <li key={r.id} className="flex items-center justify-between text-sm">
-                <span className="text-slate-700">{r.vehicle_name}</span>
-                <Link to={`/admin/reservations/${r.id}`} className="text-brand-600 underline">
-                  {STATUS_LABELS[r.status]}
-                </Link>
-              </li>
-            ))}
+            {data.todayReservations.map((r) => {
+              const theme = vehicleTheme(r.vehicle_name);
+              return (
+                <li
+                  key={r.id}
+                  className={`flex items-center justify-between text-sm rounded-xl border px-3 py-2.5 ${theme.card}`}
+                >
+                  <span className={`inline-flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-full ${theme.badge}`}>
+                    🚗 {r.vehicle_name}
+                  </span>
+                  <Link to={`/admin/reservations/${r.id}`} className="text-brand-700 font-medium underline">
+                    {STATUS_LABELS[r.status]}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-4">
         <p className="font-bold text-slate-900 mb-3">차량별 예약현황</p>
-        <div className="space-y-3">
-          {data.byVehicle.map((v) => (
-            <div key={v.vehicle_id} className="flex items-center justify-between text-sm">
-              <span className="text-slate-700">{v.vehicle_name}</span>
-              <span className="text-slate-500">
-                신청 {v.pending_count} · 확정 {v.confirmed_count} · 전체 {v.active_count}
-              </span>
-            </div>
-          ))}
+        <div className="space-y-2">
+          {data.byVehicle.map((v) => {
+            const theme = vehicleTheme(v.vehicle_name);
+            return (
+              <div
+                key={v.vehicle_id}
+                className={`flex items-center justify-between text-sm rounded-xl border px-3 py-2.5 ${theme.card}`}
+              >
+                <span className={`inline-flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-full ${theme.badge}`}>
+                  🚗 {v.vehicle_name}
+                </span>
+                <span className="text-slate-600">
+                  신청 {v.pending_count} · 확정 {v.confirmed_count} · 전체 {v.active_count}
+                </span>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

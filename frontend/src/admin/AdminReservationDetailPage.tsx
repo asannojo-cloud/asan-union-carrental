@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from "react-router-dom";
 import { api, ApiError } from "../shared/api";
 import type { AdminReservation, Vehicle } from "../shared/types";
 import { STATUS_LABELS, formatDateTimeKST } from "../shared/formatters";
+import { vehicleTheme } from "../shared/vehicleColors";
 
 export default function AdminReservationDetailPage() {
   const { id } = useParams();
@@ -96,7 +97,11 @@ export default function AdminReservationDetailPage() {
               {vehicles.map((v) => <option key={v.id} value={v.id}>{v.vehicle_name}</option>)}
             </select>
           ) : (
-            <p className="text-sm text-slate-800">{reservation.vehicle_name}</p>
+            <p
+              className={`inline-flex items-center gap-1.5 text-sm font-medium px-2.5 py-1 rounded-full ${vehicleTheme(reservation.vehicle_name).badge}`}
+            >
+              🚗 {reservation.vehicle_name}
+            </p>
           )}
         </Field>
 

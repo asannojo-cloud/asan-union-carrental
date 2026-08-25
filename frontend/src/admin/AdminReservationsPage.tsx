@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api } from "../shared/api";
 import type { AdminReservation, Vehicle } from "../shared/types";
 import { STATUS_LABELS } from "../shared/formatters";
+import { vehicleTheme } from "../shared/vehicleColors";
 
 export default function AdminReservationsPage() {
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
@@ -93,22 +94,29 @@ export default function AdminReservationsPage() {
             ) : rows.length === 0 ? (
               <tr><td colSpan={8} className="text-center py-6 text-slate-400">검색 결과가 없습니다.</td></tr>
             ) : (
-              rows.map((r) => (
-                <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50">
-                  <td className="px-3 py-2">
-                    <Link to={`/admin/reservations/${r.id}`} className="text-brand-600 underline">
-                      {r.reservation_number}
-                    </Link>
-                  </td>
-                  <td className="px-3 py-2">{r.rental_date}</td>
-                  <td className="px-3 py-2">{r.vehicle_name}</td>
-                  <td className="px-3 py-2">{r.name}</td>
-                  <td className="px-3 py-2">{r.department}</td>
-                  <td className="px-3 py-2">{r.phone}</td>
-                  <td className="px-3 py-2">{STATUS_LABELS[r.status]}</td>
-                  <td className="px-3 py-2 text-slate-400">{r.created_at.slice(0, 10)}</td>
-                </tr>
-              ))
+              rows.map((r) => {
+                const theme = vehicleTheme(r.vehicle_name);
+                return (
+                  <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50">
+                    <td className="px-3 py-2">
+                      <Link to={`/admin/reservations/${r.id}`} className="text-brand-600 underline">
+                        {r.reservation_number}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2">{r.rental_date}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-flex items-center gap-1 font-medium px-2 py-0.5 rounded-full ${theme.badge}`}>
+                        🚗 {r.vehicle_name}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2">{r.name}</td>
+                    <td className="px-3 py-2">{r.department}</td>
+                    <td className="px-3 py-2">{r.phone}</td>
+                    <td className="px-3 py-2">{STATUS_LABELS[r.status]}</td>
+                    <td className="px-3 py-2 text-slate-400">{r.created_at.slice(0, 10)}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

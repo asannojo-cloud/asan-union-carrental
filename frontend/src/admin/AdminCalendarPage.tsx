@@ -4,6 +4,7 @@ import { api } from "../shared/api";
 import type { Vehicle, CalendarEntry, AdminReservation, WeekdayCode } from "../shared/types";
 import { buildMonthGrid, shiftMonth } from "../shared/dateGrid";
 import { STATUS_LABELS } from "../shared/formatters";
+import { vehicleTheme } from "../shared/vehicleColors";
 
 const WEEKDAY_HEADERS = ["일", "월", "화", "수", "목", "금", "토"];
 const WEEKDAY_CODE_BY_INDEX: WeekdayCode[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -82,11 +83,15 @@ export default function AdminCalendarPage() {
                 className={`rounded-lg p-1 flex flex-col items-center gap-0.5 border text-left ${isSelected ? "border-brand-500 ring-1 ring-brand-500" : "border-transparent"}`}
               >
                 <span className="text-xs text-slate-700">{day}</span>
-                {vehicles.map((v) => (
-                  <span key={v.id} className="text-[8px] text-slate-500 truncate w-full">
-                    {v.vehicle_name[0]} {statusOf(v, dateStr)}
-                  </span>
-                ))}
+                {vehicles.map((v) => {
+                  const theme = vehicleTheme(v.vehicle_name);
+                  return (
+                    <span key={v.id} className={`text-[8px] rounded px-1 truncate w-full flex items-center gap-0.5`}>
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${theme.dot}`} />
+                      <span className="text-slate-500">{v.vehicle_name[0]} {statusOf(v, dateStr)}</span>
+                    </span>
+                  );
+                })}
               </button>
             );
           })}
@@ -99,10 +104,13 @@ export default function AdminCalendarPage() {
           <div className="space-y-2">
             {vehicles.map((v) => {
               const res = dayReservations.find((r) => r.vehicle_id === v.id && r.status !== "CANCELLED");
+              const theme = vehicleTheme(v.vehicle_name);
               return (
-                <div key={v.id} className="flex items-center justify-between border border-slate-100 rounded-xl p-3 text-sm">
+                <div key={v.id} className={`flex items-center justify-between rounded-xl border p-3 text-sm ${theme.card}`}>
                   <div>
-                    <p className="font-medium text-slate-900">{v.vehicle_name}</p>
+                    <p className={`inline-flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-full mb-1 ${theme.badge}`}>
+                      🚗 {v.vehicle_name}
+                    </p>
                     {res ? (
                       <p className="text-xs text-slate-500">{res.name} · {res.department} · {STATUS_LABELS[res.status]}</p>
                     ) : (

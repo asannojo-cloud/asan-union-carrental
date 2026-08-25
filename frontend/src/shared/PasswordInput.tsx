@@ -34,9 +34,24 @@ export default function PasswordInput({ value, onChange, autoComplete, autoFocus
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? "비밀번호 숨기기" : "비밀번호 표시"}
         tabIndex={-1}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-sm px-1"
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 px-1"
       >
-        {visible ? "🙈" : "👁"}
+        {visible ? (
+          // 눈 감김(슬래시) 아이콘 — 흑백 단색
+          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 3l18 18M10.6 10.6a2.5 2.5 0 003.5 3.5M9.36 5.6A10.4 10.4 0 0112 5.25c5.25 0 9 4.5 10.5 6.75-.62.94-1.86 2.6-3.6 4.03M6.6 6.6C4.6 7.94 3.1 9.87 1.5 12c1.5 2.25 5.25 6.75 10.5 6.75 1.15 0 2.23-.19 3.23-.53"
+            />
+          </svg>
+        ) : (
+          // 눈 아이콘 — 흑백 단색
+          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M1.5 12S5.25 5.25 12 5.25 22.5 12 22.5 12 18.75 18.75 12 18.75 1.5 12 1.5 12z" />
+            <circle cx="12" cy="12" r="2.75" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </button>
     </div>
   );
