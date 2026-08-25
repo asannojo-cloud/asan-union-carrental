@@ -56,3 +56,20 @@ export function isPastDateKST(dateStr: string): boolean {
 export function todayKSTCompact(): string {
   return todayKST().replace(/-/g, "");
 }
+
+/** start~end(둘 다 포함) 사이의 "YYYY-MM-DD" 날짜 목록을 순서대로 반환한다. 순수 날짜 계산이라 타임존 영향이 없다. */
+export function dateRange(startDateStr: string, endDateStr: string): string[] {
+  const [sy, sm, sd] = startDateStr.split("-").map(Number);
+  const [ey, em, ed] = endDateStr.split("-").map(Number);
+  const start = Date.UTC(sy, sm - 1, sd);
+  const end = Date.UTC(ey, em - 1, ed);
+  const dates: string[] = [];
+  for (let t = start; t <= end; t += 86400000) {
+    const dt = new Date(t);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(dt.getUTCDate()).padStart(2, "0");
+    dates.push(`${y}-${m}-${d}`);
+  }
+  return dates;
+}

@@ -24,34 +24,40 @@ publicReservationsRouter.get("/calendar", async (req, res) => {
   );
 });
 
-const createSchema = z.object({
-  vehicleId: z.coerce.number().int(),
-  rentalDate: z.string(),
-  name: z.string().min(1).max(50),
-  department: z.string().min(1).max(50),
-  phone: z.string().min(1).max(20),
-  destination: z.string().max(100).optional().nullable(),
-  purpose: z.string().max(300).optional().nullable(),
-});
+const createSchema = z
+  .object({
+    vehicleId: z.coerce.number().int(),
+    startDate: z.string(),
+    endDate: z.string().optional(),
+    name: z.string().min(1).max(50),
+    department: z.string().min(1).max(50),
+    phone: z.string().min(1).max(20),
+    destination: z.string().max(100).optional().nullable(),
+    purpose: z.string().max(300).optional().nullable(),
+  })
+  .transform((data) => ({ ...data, endDate: data.endDate ?? data.startDate }));
 
+// 여러 날짜(기간)를 한 번에 신청할 수 있다 — endDate 생략 시 startDate와 같은 하루짜리 예약.
 publicReservationsRouter.post("/", async (req, res) => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) {
     throw new AppError(400, parsed.error.issues[0]?.message ?? "필수 입력항목을 확인해주세요.");
   }
 
-  const reservation = await createReservation(parsed.data, { createdBy: "user" });
+  const reservations = await createReservation(parsed.data, { createdBy: "user" });
 
   // PRD 25절 — 응답에도 개인정보는 신청 본인 확인용으로만 되돌려주고 다른 사용자 조회 API는 별도로 없음.
-  res.status(201).json({
-    reservationNumber: reservation.reservation_number,
-    vehicleId: reservation.vehicle_id,
-    rentalDate: reservation.rental_date,
-    name: reservation.name,
-    department: reservation.department,
-    phone: reservation.phone,
-    destination: reservation.destination,
-    purpose: reservation.purpose,
-    status: reservation.status,
-  });
+  res.status(201).json(
+    reservations.map((reservation: any) => ({
+      reservationNumber: reservation.reservation_number,
+      vehicleId: reservation.vehicle_id,
+      rentalDate: reservation.rental_date,
+      name: reservation.name,
+      department: reservation.department,
+      phone: reservation.phone,
+      destination: reservation.destination,
+      purpose: reservation.purpose,
+      status: reservation.status,
+    }))
+  );
 });

@@ -1,11 +1,14 @@
+import crypto from "crypto";
 import { pool } from "../../db/pool";
 import { AppError } from "../../middleware/errorHandler";
 import { getVehicleById } from "../vehicles/vehicles.service";
-import { isValidDateString, isPastDateKST, weekdayOf } from "../../utils/kstDate";
+import { isValidDateString, isPastDateKST, weekdayOf, dateRange } from "../../utils/kstDate";
+import { formatDateKorean } from "../../utils/formatDate";
 
 export interface ReservationInput {
   vehicleId: number;
-  rentalDate: string;
+  startDate: string;
+  endDate: string; // 단일 날짜 예약은 startDate와 동일한 값
   name: string;
   department: string;
   phone: string;
@@ -21,20 +24,32 @@ export interface CreateOptions {
 
 const PHONE_RE = /^[0-9-]{9,14}$/;
 
+// 한 번에 신청할 수 있는 최대 대여 일수. 과도하게 긴 기간 신청으로 인한 오남용을 막는다.
+const MAX_RENTAL_DAYS = 14;
+
 /**
- * PRD 30절 — 예약 가능 여부 판단 우선순위. 아래 순서를 그대로 따른다.
+ * PRD 30절 — 예약 가능 여부 판단 우선순위. 아래 순서를 그대로 따르되, 여러 날짜(기간)
+ * 신청을 지원하기 위해 4번(이용 가능 요일) 검증은 기간 내 모든 날짜에 대해 수행한다.
  * 1. 날짜가 정상적인 날짜인지, 2. 과거 날짜인지, 3. 차량 존재/활성 여부,
- * 4. 차량 이용 가능 요일, 5. 동일 차량/날짜 중복 여부(호출자가 트랜잭션 내에서 처리),
+ * 4. 차량 이용 가능 요일(기간 내 모든 날짜), 5. 동일 차량/날짜 중복 여부(트랜잭션 내 처리),
  * 6. 필수 입력값.
  */
 async function validateBeforeCreate(input: ReservationInput, opts: CreateOptions) {
   // 1. 날짜 형식/실존 여부
-  if (!isValidDateString(input.rentalDate)) {
+  if (!isValidDateString(input.startDate) || !isValidDateString(input.endDate)) {
     throw new AppError(400, "올바른 날짜를 선택해주세요.");
+  }
+  if (input.endDate < input.startDate) {
+    throw new AppError(400, "종료일은 시작일보다 빠를 수 없습니다.");
+  }
+
+  const dates = dateRange(input.startDate, input.endDate);
+  if (dates.length > MAX_RENTAL_DAYS) {
+    throw new AppError(400, `한 번에 신청할 수 있는 대여 기간은 최대 ${MAX_RENTAL_DAYS}일입니다.`);
   }
 
   // 2. 과거 날짜 (PRD 31절 — 관리자 기본값도 제한, 명시적으로 허용한 경우만 예외)
-  if (isPastDateKST(input.rentalDate) && !opts.allowPastDate) {
+  if (isPastDateKST(input.startDate) && !opts.allowPastDate) {
     throw new AppError(400, "지난 날짜는 예약할 수 없습니다.");
   }
 
@@ -44,10 +59,12 @@ async function validateBeforeCreate(input: ReservationInput, opts: CreateOptions
     throw new AppError(400, "선택한 차량을 이용할 수 없습니다.");
   }
 
-  // 4. 차량 이용 가능 요일 (서버 측 검증 — PRD 13절, 프론트엔드 비활성화만으로 대체하지 않음)
-  const weekday = weekdayOf(input.rentalDate);
-  if (!vehicle.available_weekdays.includes(weekday)) {
-    throw new AppError(400, `${vehicle.vehicle_name}는(은) 해당 요일에 이용할 수 없습니다.`);
+  // 4. 차량 이용 가능 요일 — 기간에 포함된 모든 날짜가 이용 가능해야 한다.
+  for (const d of dates) {
+    const weekday = weekdayOf(d);
+    if (!vehicle.available_weekdays.includes(weekday)) {
+      throw new AppError(400, `${vehicle.vehicle_name}는(은) ${formatDateKorean(d)}에 이용할 수 없습니다.`);
+    }
   }
 
   // 6. 필수 입력값 확인
@@ -57,60 +74,71 @@ async function validateBeforeCreate(input: ReservationInput, opts: CreateOptions
     throw new AppError(400, "올바른 전화번호를 입력해주세요.");
   }
 
-  return vehicle;
+  return { vehicle, dates };
 }
 
+/**
+ * 예약 생성. 기간(startDate~endDate)에 포함된 날짜마다 reservations 행을 하나씩 만든다
+ * (예약 단위는 여전히 "1일"). 같은 요청으로 신청된 행들은 booking_group_id로 묶이며,
+ * 트랜잭션으로 묶여있어 기간 내 단 하루라도 이미 예약되어 있으면 전체가 취소(all-or-nothing)된다.
+ */
 export async function createReservation(input: ReservationInput, opts: CreateOptions) {
-  await validateBeforeCreate(input, opts);
+  const { dates } = await validateBeforeCreate(input, opts);
+  const bookingGroupId = crypto.randomUUID();
+  const status = opts.forceStatus ?? "PENDING";
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    // 5. 동일 차량/동일 날짜 기존 예약 여부 — 트랜잭션 내에서 선확인(친절한 메시지용).
-    //    최종 방어선은 아래 UNIQUE 인덱스(uq_reservations_vehicle_date_active)이며, 동시
-    //    요청 경합 상황에서는 이 선확인을 통과하더라도 INSERT가 unique_violation으로 막힌다.
-    const existing = await client.query(
-      `SELECT id FROM reservations WHERE vehicle_id = $1 AND rental_date = $2 AND status <> 'CANCELLED'
-       FOR UPDATE`,
-      [input.vehicleId, input.rentalDate]
-    );
-    if (existing.rows.length > 0) {
-      throw new AppError(409, "이미 예약된 차량입니다.");
+    const created: unknown[] = [];
+    for (const date of dates) {
+      // 5. 동일 차량/동일 날짜 기존 예약 여부 — 트랜잭션 내에서 선확인(친절한 메시지용).
+      //    최종 방어선은 uq_reservations_vehicle_date_active UNIQUE 인덱스이며, 동시 요청
+      //    경합 상황에서는 이 선확인을 통과하더라도 INSERT가 unique_violation으로 막힌다.
+      const existing = await client.query(
+        `SELECT id FROM reservations WHERE vehicle_id = $1 AND rental_date = $2 AND status <> 'CANCELLED'
+         FOR UPDATE`,
+        [input.vehicleId, date]
+      );
+      if (existing.rows.length > 0) {
+        throw new AppError(409, `${formatDateKorean(date)}은(는) 이미 예약된 차량입니다.`);
+      }
+
+      const insertResult = await client.query(
+        `INSERT INTO reservations
+           (reservation_number, vehicle_id, rental_date, name, department, phone, destination, purpose,
+            status, created_by, booking_group_id, confirmed_at)
+         VALUES ('PENDING', $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CASE WHEN $8 = 'CONFIRMED' THEN now() ELSE NULL END)
+         RETURNING id`,
+        [
+          input.vehicleId,
+          date,
+          input.name.trim(),
+          input.department.trim(),
+          input.phone.trim(),
+          input.destination?.trim() || null,
+          input.purpose?.trim() || null,
+          status,
+          opts.createdBy,
+          bookingGroupId,
+        ]
+      );
+      const id = insertResult.rows[0].id;
+
+      // PRD 42절 — 고유 예약번호 자동 생성. 전역 고유 id를 사용해 동시 생성 상황에서도 충돌하지 않는다.
+      const { rows } = await client.query(
+        `UPDATE reservations
+         SET reservation_number = 'R' || to_char(rental_date::date, 'YYYYMMDD') || '-' || lpad(id::text, 4, '0')
+         WHERE id = $1
+         RETURNING *`,
+        [id]
+      );
+      created.push(rows[0]);
     }
 
-    const status = opts.forceStatus ?? "PENDING";
-    const insertResult = await client.query(
-      `INSERT INTO reservations
-         (reservation_number, vehicle_id, rental_date, name, department, phone, destination, purpose,
-          status, created_by, confirmed_at)
-       VALUES ('PENDING', $1, $2, $3, $4, $5, $6, $7, $8, $9, CASE WHEN $8 = 'CONFIRMED' THEN now() ELSE NULL END)
-       RETURNING id`,
-      [
-        input.vehicleId,
-        input.rentalDate,
-        input.name.trim(),
-        input.department.trim(),
-        input.phone.trim(),
-        input.destination?.trim() || null,
-        input.purpose?.trim() || null,
-        status,
-        opts.createdBy,
-      ]
-    );
-    const id = insertResult.rows[0].id;
-
-    // PRD 42절 — 고유 예약번호 자동 생성. 전역 고유 id를 사용해 동시 생성 상황에서도 충돌하지 않는다.
-    const { rows } = await client.query(
-      `UPDATE reservations
-       SET reservation_number = 'R' || to_char(rental_date::date, 'YYYYMMDD') || '-' || lpad(id::text, 4, '0')
-       WHERE id = $1
-       RETURNING *`,
-      [id]
-    );
-
     await client.query("COMMIT");
-    return rows[0];
+    return created;
   } catch (err) {
     await client.query("ROLLBACK");
     // PostgreSQL unique_violation — 동시 요청 경합으로 다른 요청이 먼저 커밋된 경우 (PRD 12, 39, 40절)
@@ -132,6 +160,21 @@ export async function getCalendarStatus(year: number, month: number) {
      WHERE status <> 'CANCELLED'
        AND rental_date >= $1::date
        AND rental_date < ($1::date + INTERVAL '1 month')`,
+    [startDate]
+  );
+  return rows;
+}
+
+/** 관리자 캘린더용 — 예약이 실제로 있는 날짜만 예약자 이름/실과까지 함께 반환한다. */
+export async function getCalendarStatusAdmin(year: number, month: number) {
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const { rows } = await pool.query(
+    `SELECT id, vehicle_id, rental_date, status, name, department
+     FROM reservations
+     WHERE status <> 'CANCELLED'
+       AND rental_date >= $1::date
+       AND rental_date < ($1::date + INTERVAL '1 month')
+     ORDER BY rental_date`,
     [startDate]
   );
   return rows;
@@ -198,6 +241,19 @@ export async function getReservationByIdAdmin(id: number) {
   return rows[0] ?? null;
 }
 
+/** 같은 요청으로 함께 신청된 예약(같은 booking_group_id)을 모두 조회한다. */
+export async function getBookingGroup(groupId: string) {
+  const { rows } = await pool.query(
+    `SELECT r.*, v.vehicle_name
+     FROM reservations r
+     JOIN vehicles v ON v.id = r.vehicle_id
+     WHERE r.booking_group_id = $1
+     ORDER BY r.rental_date`,
+    [groupId]
+  );
+  return rows;
+}
+
 export async function confirmReservation(id: number) {
   const { rows } = await pool.query(
     `UPDATE reservations SET status = 'CONFIRMED', confirmed_at = now(), updated_at = now()
@@ -224,6 +280,33 @@ export async function cancelReservation(id: number) {
   return rows[0];
 }
 
+/** 같은 그룹(여러 날짜 묶음 예약)을 한 번에 확정/취소한다. */
+export async function confirmBookingGroup(groupId: string) {
+  const { rows } = await pool.query(
+    `UPDATE reservations SET status = 'CONFIRMED', confirmed_at = now(), updated_at = now()
+     WHERE booking_group_id = $1 AND status = 'PENDING'
+     RETURNING *`,
+    [groupId]
+  );
+  if (rows.length === 0) {
+    throw new AppError(400, "예약신청 상태인 예약이 없습니다.");
+  }
+  return rows;
+}
+
+export async function cancelBookingGroup(groupId: string) {
+  const { rows } = await pool.query(
+    `UPDATE reservations SET status = 'CANCELLED', cancelled_at = now(), updated_at = now()
+     WHERE booking_group_id = $1 AND status IN ('PENDING', 'CONFIRMED')
+     RETURNING *`,
+    [groupId]
+  );
+  if (rows.length === 0) {
+    throw new AppError(400, "취소할 수 있는 예약이 없습니다.");
+  }
+  return rows;
+}
+
 export async function deleteReservation(id: number) {
   const { rowCount } = await pool.query(`DELETE FROM reservations WHERE id = $1`, [id]);
   if (rowCount === 0) {
@@ -231,7 +314,14 @@ export async function deleteReservation(id: number) {
   }
 }
 
-export interface UpdateInput extends Partial<ReservationInput> {
+export interface UpdateInput {
+  vehicleId?: number;
+  rentalDate?: string;
+  name?: string;
+  department?: string;
+  phone?: string;
+  destination?: string | null;
+  purpose?: string | null;
   status?: "PENDING" | "CONFIRMED" | "CANCELLED";
 }
 

@@ -201,13 +201,6 @@ export default function HomePage() {
           <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" /> 이용불가
         </span>
       </div>
-
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 mt-4 text-xs text-slate-500 space-y-1">
-        <p>· 위에서 차량을 선택한 뒤, 달력에서 "예약가능" 날짜를 누르면 바로 예약신청 화면으로 이동합니다.</p>
-        <p>· 예약신청 후 관리자 확인을 거쳐 예약이 확정됩니다.</p>
-        <p>· 예약신청 상태에서도 다른 사용자의 중복예약은 제한됩니다.</p>
-        <p>· 예약 관련 문의는 아산시공무원노동조합으로 문의해주세요.</p>
-      </div>
     </div>
   );
 }

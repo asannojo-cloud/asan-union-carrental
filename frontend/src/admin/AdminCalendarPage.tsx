@@ -1,13 +1,21 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api } from "../shared/api";
-import type { Vehicle, CalendarEntry, AdminReservation, WeekdayCode } from "../shared/types";
+import type { Vehicle, WeekdayCode } from "../shared/types";
 import { buildMonthGrid, shiftMonth } from "../shared/dateGrid";
-import { STATUS_LABELS } from "../shared/formatters";
 import { vehicleTheme } from "../shared/vehicleColors";
 
 const WEEKDAY_HEADERS = ["일", "월", "화", "수", "목", "금", "토"];
 const WEEKDAY_CODE_BY_INDEX: WeekdayCode[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+interface AdminCalendarEntry {
+  id: number;
+  vehicle_id: number;
+  rental_date: string;
+  status: "PENDING" | "CONFIRMED" | "CANCELLED";
+  name: string;
+  department: string;
+}
 
 function todayKST() {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date());
@@ -20,9 +28,8 @@ export default function AdminCalendarPage() {
   const [year, setYear] = useState(y);
   const [month, setMonth] = useState(m);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
-  const [entries, setEntries] = useState<CalendarEntry[]>([]);
+  const [entries, setEntries] = useState<AdminCalendarEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
-  const [dayReservations, setDayReservations] = useState<AdminReservation[]>([]);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -30,17 +37,12 @@ export default function AdminCalendarPage() {
   }, []);
 
   const loadCalendar = useCallback(() => {
-    api.get<CalendarEntry[]>(`/reservations/calendar?year=${year}&month=${month}`).then(setEntries).catch(() => {});
+    api.get<AdminCalendarEntry[]>(`/admin/reservations/calendar?year=${year}&month=${month}`).then(setEntries).catch(() => {});
   }, [year, month]);
 
   useEffect(() => {
     loadCalendar();
   }, [loadCalendar]);
-
-  useEffect(() => {
-    if (!selectedDate) return;
-    api.get<AdminReservation[]>(`/admin/reservations?date=${selectedDate}`).then(setDayReservations).catch(() => {});
-  }, [selectedDate]);
 
   const weeks = buildMonthGrid(year, month);
 
@@ -51,11 +53,9 @@ export default function AdminCalendarPage() {
     setSelectedDate(null);
   }
 
-  function statusOf(vehicle: Vehicle, dateStr: string) {
+  function isVehicleAvailable(vehicle: Vehicle, dateStr: string) {
     const weekday = WEEKDAY_CODE_BY_INDEX[new Date(dateStr + "T00:00:00Z").getUTCDay()];
-    if (!vehicle.available_weekdays.includes(weekday)) return "이용불가";
-    const entry = entries.find((e) => e.vehicleId === vehicle.id && e.rentalDate === dateStr);
-    return entry ? STATUS_LABELS[entry.status] : "예약가능";
+    return vehicle.available_weekdays.includes(weekday);
   }
 
   return (
@@ -76,20 +76,27 @@ export default function AdminCalendarPage() {
             if (!dateStr) return <div key={i} />;
             const day = Number(dateStr.slice(-2));
             const isSelected = selectedDate === dateStr;
+            const dayEntries = entries.filter((e) => e.rental_date === dateStr);
             return (
               <button
                 key={dateStr}
                 onClick={() => setSelectedDate(dateStr)}
-                className={`rounded-lg p-1 flex flex-col items-center gap-0.5 border text-left ${isSelected ? "border-brand-500 ring-1 ring-brand-500" : "border-transparent"}`}
+                className={`rounded-lg p-1 min-h-[52px] flex flex-col items-start gap-0.5 border text-left ${isSelected ? "border-brand-500 ring-1 ring-brand-500" : "border-transparent"}`}
               >
                 <span className="text-xs text-slate-700">{day}</span>
-                {vehicles.map((v) => {
-                  const theme = vehicleTheme(v.vehicle_name);
+                {/* 예약이 있는 날짜만 신청자 실과·이름을 보여준다 — 예약 없는 날짜는 비워둔다. */}
+                {dayEntries.map((entry) => {
+                  const theme = vehicleTheme(vehicles.find((v) => v.id === entry.vehicle_id)?.vehicle_name ?? "");
                   return (
-                    <span key={v.id} className={`text-[8px] rounded px-1 truncate w-full flex items-center gap-0.5`}>
-                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${theme.dot}`} />
-                      <span className="text-slate-500">{v.vehicle_name[0]} {statusOf(v, dateStr)}</span>
-                    </span>
+                    <Link
+                      key={entry.id}
+                      to={`/admin/reservations/${entry.id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className={`text-[8px] leading-tight rounded px-1 truncate w-full ${theme.badge} hover:underline`}
+                      title={`${entry.department} ${entry.name}`}
+                    >
+                      {entry.department} {entry.name}
+                    </Link>
                   );
                 })}
               </button>
@@ -103,23 +110,20 @@ export default function AdminCalendarPage() {
           <p className="font-bold text-slate-900 mb-3">{selectedDate}</p>
           <div className="space-y-2">
             {vehicles.map((v) => {
-              const res = dayReservations.find((r) => r.vehicle_id === v.id && r.status !== "CANCELLED");
+              const res = entries.find((e) => e.vehicle_id === v.id && e.rental_date === selectedDate);
               const theme = vehicleTheme(v.vehicle_name);
+              const available = isVehicleAvailable(v, selectedDate);
               return (
                 <div key={v.id} className={`flex items-center justify-between rounded-xl border p-3 text-sm ${theme.card}`}>
                   <div>
                     <p className={`inline-flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-full mb-1 ${theme.badge}`}>
                       🚗 {v.vehicle_name}
                     </p>
-                    {res ? (
-                      <p className="text-xs text-slate-500">{res.name} · {res.department} · {STATUS_LABELS[res.status]}</p>
-                    ) : (
-                      <p className="text-xs text-slate-400">{statusOf(v, selectedDate)}</p>
-                    )}
+                    {res && <p className="text-xs text-slate-600">{res.department} {res.name}</p>}
                   </div>
                   {res ? (
                     <Link to={`/admin/reservations/${res.id}`} className="text-brand-600 underline text-sm">상세보기</Link>
-                  ) : statusOf(v, selectedDate) === "예약가능" ? (
+                  ) : available ? (
                     <button
                       onClick={() => navigate(`/admin/reservations/new?vehicleId=${v.id}&date=${selectedDate}`)}
                       className="text-sm bg-brand-900 text-white rounded-lg px-3 py-1.5"
