@@ -83,7 +83,7 @@ export default function HomePage() {
       {/* 차량 안내 (PRD 35절) */}
       <div className="grid grid-cols-2 gap-3 mb-5">
         {vehicles.map((v) => (
-          <div key={v.id} className="bg-white rounded-xl border border-slate-200 p-3">
+          <div key={v.id} className="bg-emerald-50 rounded-xl border border-emerald-100 p-3">
             <p className="font-bold text-slate-900 text-sm">🚗 {v.vehicle_name}</p>
             <p className="text-xs text-slate-500 mt-1">
               {v.available_weekdays.length >= 7 ? "평일 · 주말 이용 가능" : "주말 이용 가능"}
@@ -172,7 +172,7 @@ export default function HomePage() {
               const s = statusOf(v, selectedDate);
               const reservable = s === "AVAILABLE";
               return (
-                <div key={v.id} className="flex items-center justify-between border border-slate-100 rounded-xl p-3">
+                <div key={v.id} className="flex items-center justify-between bg-emerald-50 border border-emerald-100 rounded-xl p-3">
                   <div>
                     <p className="font-medium text-slate-900 text-sm">{v.vehicle_name}</p>
                     <p className={`text-xs mt-0.5 ${CELL_STYLE[s]} inline-block px-2 py-0.5 rounded-full`}>
