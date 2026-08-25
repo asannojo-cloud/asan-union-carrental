@@ -98,15 +98,20 @@ export default function HomePage() {
       <div className="grid grid-cols-2 gap-3 mb-5">
         {vehicles.map((v) => {
           const active = v.id === selectedVehicleId;
+          // 하모니카는 원래 색상(민트), 아아카는 핑크로 차량별로 다른 색을 쓴다.
+          const isHarmonica = v.vehicle_name === "하모니카";
+          const baseClass = isHarmonica
+            ? active
+              ? "bg-emerald-100 border-brand-500 ring-1 ring-brand-500"
+              : "bg-emerald-50 border-emerald-100 hover:bg-emerald-100/60"
+            : active
+              ? "bg-pink-100 border-brand-500 ring-1 ring-brand-500"
+              : "bg-pink-50 border-pink-100 hover:bg-pink-100/60";
           return (
             <button
               key={v.id}
               onClick={() => setSelectedVehicleId(v.id)}
-              className={`text-left rounded-xl border p-3 transition ${
-                active
-                  ? "bg-pink-100 border-brand-500 ring-1 ring-brand-500"
-                  : "bg-pink-50 border-pink-100 hover:bg-pink-100/60"
-              }`}
+              className={`text-left rounded-xl border p-3 transition ${baseClass}`}
             >
               <p className="font-bold text-slate-900 text-sm">🚗 {v.vehicle_name}</p>
               <p className="text-xs text-slate-500 mt-1">
