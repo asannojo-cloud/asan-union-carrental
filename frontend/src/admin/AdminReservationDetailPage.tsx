@@ -153,10 +153,10 @@ export default function AdminReservationDetailPage() {
           ) : (
             <>
               {reservation.status === "PENDING" && (
-                <button disabled={busy} onClick={handleConfirm} className="bg-sky-400 hover:bg-sky-500 text-white text-sm rounded-lg px-4 py-2">예약 확정</button>
+                <button disabled={busy} onClick={handleConfirm} className="bg-sky-200 hover:bg-sky-300 text-sky-900 text-sm rounded-lg px-4 py-2">예약 확정</button>
               )}
               {(reservation.status === "PENDING" || reservation.status === "CONFIRMED") && (
-                <button disabled={busy} onClick={handleCancel} className="bg-status-pending text-white text-sm rounded-lg px-4 py-2">예약 취소</button>
+                <button disabled={busy} onClick={handleCancel} className="bg-pink-400 hover:bg-pink-500 text-white text-sm rounded-lg px-4 py-2">예약 취소</button>
               )}
               <button disabled={busy} onClick={() => setEditing(true)} className="bg-slate-100 text-slate-700 text-sm rounded-lg px-4 py-2">수정</button>
               <button disabled={busy} onClick={handleDelete} className="bg-white text-red-600 border border-red-200 text-sm rounded-lg px-4 py-2 ml-auto">완전삭제</button>
