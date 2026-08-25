@@ -12,6 +12,7 @@ interface Props {
 /** 차량 이용안내문 + 지정계좌 안내 + 필수 동의 체크박스. */
 export default function UsageGuide({ agreed, onAgreedChange }: Props) {
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
   async function handleCopyAccount() {
     const text = `${ACCOUNT_BANK} ${ACCOUNT_NUMBER} (${ACCOUNT_HOLDER})`;
@@ -26,9 +27,30 @@ export default function UsageGuide({ agreed, onAgreedChange }: Props) {
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4">
-      <p className="font-bold text-slate-900 mb-3">🚐 차량 이용안내문 (필수 확인)</p>
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center justify-between gap-2"
+        aria-expanded={expanded}
+      >
+        <span className="font-bold text-slate-900">🚐 차량 이용안내문 (필수 확인)</span>
+        <svg
+          viewBox="0 0 24 24"
+          className={`w-4 h-4 text-slate-500 shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 9l6 6 6-6" />
+        </svg>
+      </button>
 
-      <div className="max-h-72 overflow-y-auto text-xs text-slate-600 space-y-3 pr-1 border border-slate-100 rounded-xl p-3 bg-slate-50">
+      {!expanded && (
+        <p className="text-xs text-slate-400 mt-1">눌러서 이용요금·환불규정·지정계좌 등 전체 내용을 확인하세요.</p>
+      )}
+
+      {expanded && (
+        <div className="max-h-72 overflow-y-auto text-xs text-slate-600 space-y-3 pr-1 border border-slate-100 rounded-xl p-3 bg-slate-50 mt-3">
         <Section title="사용차종">
           카니발 9인승(흰색, 160하8263)
           <br />
@@ -107,7 +129,8 @@ export default function UsageGuide({ agreed, onAgreedChange }: Props) {
           <br />· 6인 이상 탑승시 고속도로버스전용차로 이용가능(시내지역 버스전용차로 이용불가)
         </Section>
         <p className="font-bold text-red-500">【 주의사항 : 상기 사용 조건 위반 시 패널티 부여 】</p>
-      </div>
+        </div>
+      )}
 
       <div className="mt-3 text-xs text-slate-600 bg-brand-50 rounded-xl p-3 space-y-1.5">
         <p>
