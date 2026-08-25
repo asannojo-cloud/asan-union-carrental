@@ -4,10 +4,10 @@ import { api, ApiError } from "../shared/api";
 import type { Vehicle, ReservationSummary, CalendarEntry } from "../shared/types";
 import { formatDateKorean } from "../shared/formatters";
 import { addDays, dateRange } from "../shared/dateGrid";
+import { PRICE_PER_DAY, MAX_RENTAL_DAYS as MAX_DAYS } from "../shared/pricing";
+import UsageGuide from "./UsageGuide";
 
 const PHONE_RE = /^[0-9-]{9,14}$/;
-const MAX_DAYS = 7;
-const PRICE_PER_DAY = 50000;
 const WEEKDAY_CODE_BY_INDEX = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"] as const;
 
 export default function ReservationFormPage() {
@@ -15,9 +15,10 @@ export default function ReservationFormPage() {
   const navigate = useNavigate();
   const vehicleId = Number(params.get("vehicleId"));
   const startDate = params.get("date") ?? "";
+  const initialDays = Math.min(MAX_DAYS, Math.max(1, Number(params.get("days")) || 1));
 
   const [vehicle, setVehicle] = useState<Vehicle | null>(null);
-  const [days, setDays] = useState(1);
+  const [days, setDays] = useState(initialDays);
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
   const [phone, setPhone] = useState("");
@@ -27,6 +28,7 @@ export default function ReservationFormPage() {
   const [submitting, setSubmitting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [rangeWarning, setRangeWarning] = useState<string | null>(null);
+  const [agreed, setAgreed] = useState(false);
 
   const endDate = useMemo(() => addDays(startDate, days - 1), [startDate, days]);
   const selectedDates = useMemo(() => dateRange(startDate, endDate), [startDate, endDate]);
@@ -73,7 +75,7 @@ export default function ReservationFormPage() {
   }, [vehicle, days, selectedDates]);
 
   const phoneValid = PHONE_RE.test(phone.trim());
-  const canSubmit = name.trim() && department.trim() && phoneValid && !submitting && !rangeWarning;
+  const canSubmit = name.trim() && department.trim() && phoneValid && agreed && !submitting && !rangeWarning;
 
   if (!vehicleId || !startDate) {
     return (
@@ -198,6 +200,10 @@ export default function ReservationFormPage() {
           {periodLabel} · <span className="font-medium text-brand-700">{totalPrice.toLocaleString()}원</span>
         </p>
         {rangeWarning && <p className="text-xs text-red-500 mt-2">{rangeWarning}</p>}
+      </div>
+
+      <div className="mb-4">
+        <UsageGuide agreed={agreed} onAgreedChange={setAgreed} />
       </div>
 
       <form onSubmit={handleReviewSubmit} className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">

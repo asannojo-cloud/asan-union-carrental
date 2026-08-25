@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../shared/api";
 import type { Vehicle, CalendarEntry, WeekdayCode } from "../shared/types";
-import { buildMonthGrid, shiftMonth } from "../shared/dateGrid";
-import { todayKST } from "../shared/formatters";
+import { buildMonthGrid, shiftMonth, dateRange } from "../shared/dateGrid";
+import { todayKST, formatDateKorean } from "../shared/formatters";
+import { PRICE_PER_DAY } from "../shared/pricing";
 
 const WEEKDAY_HEADERS = ["일", "월", "화", "수", "목", "금", "토"];
 const WEEKDAY_CODE_BY_INDEX: WeekdayCode[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -35,7 +36,12 @@ export default function HomePage() {
   const [month, setMonth] = useState(m);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
+  const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId) ?? null;
   const [entries, setEntries] = useState<CalendarEntry[]>([]);
+  const [rangeStart, setRangeStart] = useState<string | null>(null);
+  const [rangeEnd, setRangeEnd] = useState<string | null>(null);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -63,6 +69,18 @@ export default function HomePage() {
     return () => clearInterval(timer);
   }, [loadCalendar]);
 
+  // 드래그 중 마우스 버튼을 달력 밖에서 놓는 경우까지 대비한 전역 리스너.
+  useEffect(() => {
+    if (!isDragging) return;
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    return () => {
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDragging, rangeStart, rangeEnd, selectedVehicle]);
+
   function statusOf(vehicle: Vehicle, dateStr: string): CellStatus {
     if (dateStr < today) return "PAST";
     const weekday = WEEKDAY_CODE_BY_INDEX[new Date(dateStr + "T00:00:00Z").getUTCDay()];
@@ -72,7 +90,6 @@ export default function HomePage() {
   }
 
   const weeks = buildMonthGrid(year, month);
-  const selectedVehicle = vehicles.find((v) => v.id === selectedVehicleId) ?? null;
 
   function goMonth(delta: number) {
     const next = shiftMonth(year, month, delta);
@@ -80,11 +97,72 @@ export default function HomePage() {
     setMonth(next.month);
   }
 
-  function handleDateClick(dateStr: string) {
+  function resetSelection() {
+    setIsDragging(false);
+    setRangeStart(null);
+    setRangeEnd(null);
+    setRangeError(null);
+  }
+
+  // 캘린더에서 시작일을 누른 채로 끌어서(드래그) 기간을 블록처럼 선택한다. 마우스/터치 모두 지원.
+  function findDateAt(clientX: number, clientY: number): string | null {
+    const el = document.elementFromPoint(clientX, clientY);
+    const dateEl = el instanceof Element ? el.closest<HTMLElement>("[data-date]") : null;
+    return dateEl?.dataset.date ?? null;
+  }
+
+  function handlePointerDownCell(dateStr: string, reservable: boolean) {
+    if (!reservable) return;
+    setIsDragging(true);
+    setRangeStart(dateStr);
+    setRangeEnd(dateStr);
+    setRangeError(null);
+  }
+
+  function handleGridPointerMove(e: ReactPointerEvent) {
+    if (!isDragging) return;
+    const d = findDateAt(e.clientX, e.clientY);
+    if (d) setRangeEnd(d);
+  }
+
+  function finishDrag() {
+    if (!isDragging || !rangeStart) {
+      setIsDragging(false);
+      return;
+    }
+    setIsDragging(false);
     if (!selectedVehicle) return;
-    const status = statusOf(selectedVehicle, dateStr);
-    if (status !== "AVAILABLE") return;
-    navigate(`/reserve?vehicleId=${selectedVehicle.id}&date=${dateStr}`);
+
+    const end = rangeEnd ?? rangeStart;
+    const lo = rangeStart < end ? rangeStart : end;
+    const hi = rangeStart < end ? end : rangeStart;
+    const days = dateRange(lo, hi);
+
+    const blocked = days.find((d) => statusOf(selectedVehicle, d) !== "AVAILABLE");
+    if (blocked) {
+      setRangeError(`${formatDateKorean(blocked)}은(는) 예약할 수 없어 해당 기간을 선택할 수 없습니다. 다시 선택해주세요.`);
+      setRangeStart(null);
+      setRangeEnd(null);
+      return;
+    }
+
+    setRangeStart(lo);
+    setRangeEnd(hi);
+  }
+
+  function isInRange(dateStr: string) {
+    if (!rangeStart) return false;
+    const end = rangeEnd ?? rangeStart;
+    const lo = rangeStart < end ? rangeStart : end;
+    const hi = rangeStart < end ? end : rangeStart;
+    return dateStr >= lo && dateStr <= hi;
+  }
+
+  const selectedDays = rangeStart ? dateRange(rangeStart, rangeEnd ?? rangeStart).length : 0;
+
+  function goToReserve() {
+    if (!selectedVehicle || !rangeStart) return;
+    navigate(`/reserve?vehicleId=${selectedVehicle.id}&date=${rangeStart}&days=${selectedDays}`);
   }
 
   return (
@@ -127,7 +205,10 @@ export default function HomePage() {
           return (
             <button
               key={v.id}
-              onClick={() => setSelectedVehicleId(v.id)}
+              onClick={() => {
+                setSelectedVehicleId(v.id);
+                resetSelection();
+              }}
               className={`text-left rounded-xl border p-3 transition ${baseClass}`}
             >
               <p className="font-bold text-slate-900 text-sm">🚗 {v.vehicle_name}</p>
@@ -153,7 +234,9 @@ export default function HomePage() {
           </button>
         </div>
         {selectedVehicle && (
-          <p className="text-center text-xs text-brand-600 font-medium mb-2">🚗 {selectedVehicle.vehicle_name} 예약현황</p>
+          <p className="text-center text-xs text-brand-600 font-medium mb-2">
+            🚗 {selectedVehicle.vehicle_name} 예약현황 — 날짜를 누른 채로 끌어서(드래그) 기간을 선택하세요
+          </p>
         )}
 
         <div className="grid grid-cols-7 text-center text-[11px] text-slate-400 mb-1">
@@ -162,29 +245,65 @@ export default function HomePage() {
           ))}
         </div>
 
-        <div className="grid grid-cols-7 gap-1">
+        <div
+          className="grid grid-cols-7 gap-1 select-none touch-none"
+          onPointerMove={handleGridPointerMove}
+          onPointerUp={finishDrag}
+          onPointerCancel={finishDrag}
+        >
           {weeks.flat().map((dateStr, i) => {
             if (!dateStr) return <div key={i} />;
             const day = Number(dateStr.slice(-2));
             const isToday = dateStr === today;
             const s = selectedVehicle ? statusOf(selectedVehicle, dateStr) : "PAST";
             const reservable = selectedVehicle !== null && s === "AVAILABLE";
+            const inRange = isInRange(dateStr);
             return (
               <button
                 key={dateStr}
-                onClick={() => handleDateClick(dateStr)}
+                data-date={dateStr}
+                onPointerDown={() => handlePointerDownCell(dateStr, reservable)}
                 disabled={!reservable}
-                className={`rounded-lg py-1.5 flex flex-col items-center gap-1 border transition ${
-                  isToday ? "border-brand-300" : "border-transparent"
+                className={`rounded-lg py-1.5 flex flex-col items-center gap-1 border-2 transition ${
+                  inRange ? "border-brand-500 bg-brand-50" : isToday ? "border-brand-200" : "border-transparent"
                 } ${reservable ? "cursor-pointer hover:ring-1 hover:ring-brand-400" : "cursor-not-allowed"}`}
               >
-                <span className="text-xs text-slate-700">{day}</span>
+                <span className={`text-xs ${inRange ? "text-brand-700 font-bold" : "text-slate-700"}`}>{day}</span>
                 <span className={`text-[9px] leading-tight rounded px-1 py-0.5 ${CELL_STYLE[s]}`}>{CELL_LABEL[s]}</span>
               </button>
             );
           })}
         </div>
       </div>
+
+      {/* 기간 선택 요약 및 예약 진행 */}
+      {rangeStart && (
+        <div className="bg-white rounded-2xl border border-brand-200 p-4 mt-4">
+          <p className="text-sm font-medium text-slate-900 mb-1">
+            선택한 기간: {formatDateKorean(rangeStart)}
+            {rangeEnd && rangeEnd !== rangeStart && ` ~ ${formatDateKorean(rangeEnd)}`}
+            {rangeEnd ? ` (${selectedDays}일)` : " (종료일을 선택해주세요)"}
+          </p>
+          {rangeEnd && (
+            <p className="text-sm text-brand-700 font-medium mb-3">
+              예상 이용요금: {(selectedDays * PRICE_PER_DAY).toLocaleString()}원
+            </p>
+          )}
+          {rangeError && <p className="text-xs text-red-500 mb-2">{rangeError}</p>}
+          <div className="flex gap-2">
+            <button onClick={resetSelection} className="flex-1 rounded-lg bg-slate-100 text-slate-700 py-2.5 text-sm font-medium">
+              다시 선택
+            </button>
+            <button
+              onClick={goToReserve}
+              disabled={!rangeEnd}
+              className="flex-1 rounded-lg bg-brand-900 text-white py-2.5 text-sm font-medium disabled:bg-slate-200 disabled:text-slate-400"
+            >
+              이 기간으로 예약하기
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 상태 범례 (PRD 33절 — 텍스트와 색상 함께) */}
       <div className="flex flex-wrap gap-3 mt-3 text-[11px] text-slate-500">
