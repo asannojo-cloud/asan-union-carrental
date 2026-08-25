@@ -14,6 +14,7 @@ export default function AdminReservationsPage() {
   const [status, setStatus] = useState("");
   const [name, setName] = useState("");
   const [department, setDepartment] = useState("");
+  const [phone, setPhone] = useState("");
 
   useEffect(() => {
     api.get<Vehicle[]>("/admin/vehicles").then(setVehicles).catch(() => {});
@@ -27,6 +28,7 @@ export default function AdminReservationsPage() {
     if (status) q.set("status", status);
     if (name) q.set("name", name);
     if (department) q.set("department", department);
+    if (phone) q.set("phone", phone);
     try {
       const data = await api.get<AdminReservation[]>(`/admin/reservations?${q.toString()}`);
       setRows(data);
@@ -50,7 +52,7 @@ export default function AdminReservationsPage() {
       </div>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-4 mb-4">
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
           <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
           <select value={vehicleId} onChange={(e) => setVehicleId(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm">
             <option value="">전체 차량</option>
@@ -66,6 +68,7 @@ export default function AdminReservationsPage() {
           </select>
           <input placeholder="예약자명" value={name} onChange={(e) => setName(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
           <input placeholder="실과" value={department} onChange={(e) => setDepartment(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
+          <input placeholder="전화번호" value={phone} onChange={(e) => setPhone(e.target.value)} className="border border-slate-300 rounded-lg px-2 py-1.5 text-sm" />
         </div>
         <button onClick={search} className="mt-3 text-sm bg-slate-800 text-white rounded-lg px-4 py-1.5">검색</button>
       </div>
