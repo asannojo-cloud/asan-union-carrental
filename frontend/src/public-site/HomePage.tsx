@@ -98,16 +98,16 @@ export default function HomePage() {
           (예약자명으로 입금 부탁드립니다)
         </p>
         <div>
-          <p className="font-medium text-slate-900">이용요금</p>
+          <p className="font-medium text-slate-900">💰 이용요금</p>
           <p>· 1일: 5만원</p>
           <p>※ 1박 2일의 경우 5만원이 아닌 2일 대여이기 때문에 10만원입니다.</p>
         </div>
         <div>
-          <p className="font-medium text-slate-900">대여 기간 안내</p>
+          <p className="font-medium text-slate-900">📅 대여 기간 안내</p>
           <p>예) 1.2~4 대여: 1일에서 2일 넘어가는 자정 12시부터 4일에서 5일 넘어가는 자정 12시까지</p>
         </div>
         <p className="font-medium text-slate-900">
-          조합원 외 대여 불가하며, 대여 시 반드시 조합원이 탑승하셔야 합니다.
+          👤 조합원 외 대여 불가하며, 대여 시 반드시 조합원이 탑승하셔야 합니다.
         </p>
       </div>
 
