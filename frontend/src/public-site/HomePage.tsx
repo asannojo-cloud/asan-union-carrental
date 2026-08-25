@@ -94,6 +94,28 @@ export default function HomePage() {
         로그인 없이 바로 신청할 수 있습니다.
       </p>
 
+      {/* 이용요금 · 입금 · 대여기간 · 이용대상 안내 */}
+      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 mb-5 text-xs text-slate-700 space-y-2.5">
+        <p>
+          차량선택 후, 날짜를 클릭하면 신청자 정보 입력 후 <strong>확정</strong> 클릭 후 3일 이내 입금하시면
+          예약이 확정됩니다.
+          <br />
+          (예약자명으로 입금 부탁드립니다)
+        </p>
+        <div>
+          <p className="font-medium text-slate-900">이용요금</p>
+          <p>· 1일: 5만원</p>
+          <p>※ 1박 2일의 경우 5만원이 아닌 2일 대여이기 때문에 10만원입니다.</p>
+        </div>
+        <div>
+          <p className="font-medium text-slate-900">대여 기간 안내</p>
+          <p>예) 1.2~4 대여: 1일에서 2일 넘어가는 자정 12시부터 4일에서 5일 넘어가는 자정 12시까지</p>
+        </div>
+        <p className="font-medium text-slate-900">
+          조합원 외 대여 불가하며, 대여 시 반드시 조합원이 탑승하셔야 합니다.
+        </p>
+      </div>
+
       {/* 차량 선택 (PRD 35절 — 누른 차량이 아래 달력에 표시되고, 날짜를 누르면 예약이 진행된다) */}
       <div className="grid grid-cols-2 gap-3 mb-5">
         {vehicles.map((v) => {
