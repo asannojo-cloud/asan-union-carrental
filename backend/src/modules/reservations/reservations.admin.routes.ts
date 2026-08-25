@@ -14,6 +14,7 @@ import {
   deleteReservation,
   updateReservationAdmin,
 } from "./reservations.service";
+import { logAudit, listAuditLogsForReservation } from "../audit/audit.service";
 
 export const adminReservationsRouter = Router();
 
@@ -47,12 +48,28 @@ adminReservationsRouter.get("/calendar", async (req, res) => {
   res.json(rows);
 });
 
+// PRD 접근통제 보완 — 예약 상세(전화번호 등 개인정보 전체)를 열람할 때마다 누가 언제
+// 열람했는지 감사로그에 남긴다.
 adminReservationsRouter.get("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) throw new AppError(400, "잘못된 예약 ID입니다.");
   const reservation = await getReservationByIdAdmin(id);
   if (!reservation) throw new AppError(404, "예약을 찾을 수 없습니다.");
+  await logAudit({
+    adminUsername: req.session.auth!.username,
+    action: "VIEW",
+    reservationId: reservation.id,
+    reservationNumber: reservation.reservation_number,
+  });
   res.json(reservation);
+});
+
+// 이 예약(및 같은 묶음)에 대한 열람/변경/확정/취소/삭제 이력.
+adminReservationsRouter.get("/:id/audit-logs", async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) throw new AppError(400, "잘못된 예약 ID입니다.");
+  const rows = await listAuditLogsForReservation(id);
+  res.json(rows);
 });
 
 // 같은 요청으로 함께 신청된 여러 날짜 예약(묶음) 조회/일괄 확정/일괄 취소.
@@ -62,12 +79,12 @@ adminReservationsRouter.get("/group/:groupId", async (req, res) => {
 });
 
 adminReservationsRouter.patch("/group/:groupId/confirm", async (req, res) => {
-  const rows = await confirmBookingGroup(req.params.groupId);
+  const rows = await confirmBookingGroup(req.params.groupId, req.session.auth!.username);
   res.json(rows);
 });
 
 adminReservationsRouter.patch("/group/:groupId/cancel", async (req, res) => {
-  const rows = await cancelBookingGroup(req.params.groupId);
+  const rows = await cancelBookingGroup(req.params.groupId, req.session.auth!.username);
   res.json(rows);
 });
 
@@ -104,14 +121,14 @@ adminReservationsRouter.post("/", async (req, res) => {
 adminReservationsRouter.patch("/:id/confirm", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) throw new AppError(400, "잘못된 예약 ID입니다.");
-  const reservation = await confirmReservation(id);
+  const reservation = await confirmReservation(id, req.session.auth!.username);
   res.json(reservation);
 });
 
 adminReservationsRouter.patch("/:id/cancel", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) throw new AppError(400, "잘못된 예약 ID입니다.");
-  const reservation = await cancelReservation(id);
+  const reservation = await cancelReservation(id, req.session.auth!.username);
   res.json(reservation);
 });
 
@@ -134,14 +151,15 @@ adminReservationsRouter.patch("/:id", async (req, res) => {
   if (!parsed.success) {
     throw new AppError(400, parsed.error.issues[0]?.message ?? "입력값을 확인해주세요.");
   }
-  const reservation = await updateReservationAdmin(id, parsed.data);
+  const reservation = await updateReservationAdmin(id, parsed.data, req.session.auth!.username);
   res.json(reservation);
 });
 
 // PRD 41절 — 완전삭제는 관리자만 가능한 별도 기능. 실수 등록 정리용이며 일반 취소와는 다르다.
+// 삭제 전 내용은 감사로그에 스냅샷으로 남아 삭제 이후에도 조회 가능하다 (deleteReservation 참고).
 adminReservationsRouter.delete("/:id", async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) throw new AppError(400, "잘못된 예약 ID입니다.");
-  await deleteReservation(id);
+  await deleteReservation(id, req.session.auth!.username);
   res.json({ ok: true });
 });

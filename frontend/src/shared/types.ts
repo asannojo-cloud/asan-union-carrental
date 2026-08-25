@@ -44,4 +44,19 @@ export interface AdminReservation {
   updated_at: string;
   confirmed_at: string | null;
   cancelled_at: string | null;
+  confirmed_by: string | null;
+  cancelled_by: string | null;
+  booking_group_id: string | null;
+}
+
+export type AuditAction = "VIEW" | "CREATE" | "UPDATE" | "CONFIRM" | "CANCEL" | "DELETE";
+
+export interface AuditLog {
+  id: number;
+  admin_username: string;
+  action: AuditAction;
+  reservation_id: number | null;
+  reservation_number: string | null;
+  detail: Record<string, unknown> | null;
+  created_at: string;
 }

@@ -9,6 +9,7 @@
     "start": "node dist/server.js",
     "migrate": "tsx src/db/migrate.ts",
     "seed": "tsx src/db/seed.ts",
+    "encrypt-existing-data": "tsx src/db/encrypt-existing-data.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

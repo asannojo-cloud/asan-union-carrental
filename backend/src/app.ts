@@ -19,6 +19,7 @@ import { adminVehiclesRouter } from "./modules/vehicles/vehicles.admin.routes";
 import { publicReservationsRouter } from "./modules/reservations/reservations.public.routes";
 import { adminReservationsRouter } from "./modules/reservations/reservations.admin.routes";
 import { adminDashboardRouter } from "./modules/dashboard/dashboard.routes";
+import { adminAuditRouter } from "./modules/audit/audit.routes";
 
 const PgSession = connectPgSimple(session);
 
@@ -65,6 +66,7 @@ export function createApp() {
   app.use("/api/admin/vehicles", adminGuard, adminVehiclesRouter);
   app.use("/api/admin/reservations", adminGuard, adminReservationsRouter);
   app.use("/api/admin/dashboard", adminGuard, adminDashboardRouter);
+  app.use("/api/admin/audit-logs", adminGuard, adminAuditRouter);
 
   app.use("/api", notFoundHandler);
 

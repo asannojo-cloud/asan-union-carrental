@@ -20,6 +20,8 @@ export const env = {
   port: parseInt(process.env.PORT ?? "4200", 10),
   databaseUrl: required("DATABASE_URL"),
   sessionSecret: required("SESSION_SECRET"),
+  // 이름/전화번호 등 개인정보 컬럼 암호화(AES-256-GCM)용 키. base64로 인코딩된 32바이트 값.
+  encryptionKey: required("ENCRYPTION_KEY"),
   frontendOrigin: process.env.FRONTEND_ORIGIN ?? "http://localhost:5190",
 
   loginMaxAttempts: parseInt(process.env.LOGIN_MAX_ATTEMPTS ?? "5", 10),

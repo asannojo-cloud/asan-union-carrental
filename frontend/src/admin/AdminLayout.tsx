@@ -7,6 +7,7 @@ const links = [
   { to: "/admin/calendar", label: "예약 캘린더" },
   { to: "/admin/reservations", label: "예약 관리" },
   { to: "/admin/reservations/new", label: "예약 등록" },
+  { to: "/admin/audit-logs", label: "감사로그" },
   { to: "/admin/settings", label: "관리자 설정" },
 ];
 

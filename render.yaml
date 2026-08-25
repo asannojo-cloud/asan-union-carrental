@@ -17,6 +17,11 @@ services:
         sync: false
       - key: SESSION_SECRET
         generateValue: true
+      # 이름/전화번호 등 개인정보 컬럼 암호화 키(AES-256-GCM). 로컬에서 생성해 Render에는
+      # 대시보드에서 직접 입력한다 — Render의 자동생성값은 형식(base64, 32바이트)을 보장하지
+      # 않아 이 값만은 자동생성을 쓰지 않는다.
+      - key: ENCRYPTION_KEY
+        sync: false
       - key: FRONTEND_ORIGIN
         value: https://asan-union-carrental.onrender.com
       - key: LOGIN_MAX_ATTEMPTS

@@ -4,6 +4,8 @@ import { AppError } from "../../middleware/errorHandler";
 import { getVehicleById } from "../vehicles/vehicles.service";
 import { isValidDateString, isPastDateKST, weekdayOf, dateRange } from "../../utils/kstDate";
 import { formatDateKorean } from "../../utils/formatDate";
+import { encrypt, encryptNullable, decrypt, decryptNullable } from "../../utils/crypto";
+import { logAudit } from "../audit/audit.service";
 
 export interface ReservationInput {
   vehicleId: number;
@@ -26,6 +28,24 @@ const PHONE_RE = /^[0-9-]{9,14}$/;
 
 // 한 번에 신청할 수 있는 최대 대여 일수. 과도하게 긴 기간 신청으로 인한 오남용을 막는다.
 const MAX_RENTAL_DAYS = 14;
+
+/**
+ * 이름/전화번호/방문지역/대여목적은 저장 전 암호화(AES-256-GCM)되어 있다 (utils/crypto.ts).
+ * DB(Neon) 접속정보가 유출되더라도 애플리케이션 서버의 ENCRYPTION_KEY 없이는 평문을 복원할 수
+ * 없다. 암호화된 값은 SQL ILIKE로 부분검색할 수 없으므로, 이름/전화번호 검색은 이 파일에서
+ * 복호화 후 애플리케이션 레벨로 필터링한다 (listReservationsAdmin 참고).
+ */
+function decryptRow<T extends { name: string; phone: string; destination: string | null; purpose: string | null }>(
+  row: T
+): T {
+  return {
+    ...row,
+    name: decrypt(row.name),
+    phone: decrypt(row.phone),
+    destination: decryptNullable(row.destination),
+    purpose: decryptNullable(row.purpose),
+  };
+}
 
 /**
  * PRD 30절 — 예약 가능 여부 판단 우선순위. 아래 순서를 그대로 따르되, 여러 날짜(기간)
@@ -87,11 +107,16 @@ export async function createReservation(input: ReservationInput, opts: CreateOpt
   const bookingGroupId = crypto.randomUUID();
   const status = opts.forceStatus ?? "PENDING";
 
+  const encName = encrypt(input.name.trim());
+  const encPhone = encrypt(input.phone.trim());
+  const encDestination = encryptNullable(input.destination?.trim());
+  const encPurpose = encryptNullable(input.purpose?.trim());
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
-    const created: unknown[] = [];
+    const created: any[] = [];
     for (const date of dates) {
       // 5. 동일 차량/동일 날짜 기존 예약 여부 — 트랜잭션 내에서 선확인(친절한 메시지용).
       //    최종 방어선은 uq_reservations_vehicle_date_active UNIQUE 인덱스이며, 동시 요청
@@ -114,11 +139,11 @@ export async function createReservation(input: ReservationInput, opts: CreateOpt
         [
           input.vehicleId,
           date,
-          input.name.trim(),
+          encName,
           input.department.trim(),
-          input.phone.trim(),
-          input.destination?.trim() || null,
-          input.purpose?.trim() || null,
+          encPhone,
+          encDestination,
+          encPurpose,
           status,
           opts.createdBy,
           bookingGroupId,
@@ -138,7 +163,16 @@ export async function createReservation(input: ReservationInput, opts: CreateOpt
     }
 
     await client.query("COMMIT");
-    return created;
+    const decrypted = created.map(decryptRow);
+    for (const r of decrypted) {
+      await logAudit({
+        adminUsername: opts.createdBy,
+        action: "CREATE",
+        reservationId: r.id,
+        reservationNumber: r.reservation_number,
+      });
+    }
+    return decrypted;
   } catch (err) {
     await client.query("ROLLBACK");
     // PostgreSQL unique_violation — 동시 요청 경합으로 다른 요청이 먼저 커밋된 경우 (PRD 12, 39, 40절)
@@ -177,7 +211,7 @@ export async function getCalendarStatusAdmin(year: number, month: number) {
      ORDER BY rental_date`,
     [startDate]
   );
-  return rows;
+  return rows.map((r) => ({ ...r, name: decrypt(r.name) }));
 }
 
 export interface AdminListFilters {
@@ -189,6 +223,10 @@ export interface AdminListFilters {
   phone?: string;
 }
 
+/**
+ * 이름/전화번호는 암호화되어 있어 SQL로 부분검색할 수 없으므로, 날짜/차량/상태/실과로
+ * SQL 필터링한 뒤 복호화하고 이름/전화번호 조건은 애플리케이션에서 다시 걸러낸다.
+ */
 export async function listReservationsAdmin(filters: AdminListFilters) {
   const clauses: string[] = [];
   const values: unknown[] = [];
@@ -205,17 +243,9 @@ export async function listReservationsAdmin(filters: AdminListFilters) {
     values.push(filters.status);
     clauses.push(`r.status = $${values.length}`);
   }
-  if (filters.name) {
-    values.push(`%${filters.name}%`);
-    clauses.push(`r.name ILIKE $${values.length}`);
-  }
   if (filters.department) {
     values.push(`%${filters.department}%`);
     clauses.push(`r.department ILIKE $${values.length}`);
-  }
-  if (filters.phone) {
-    values.push(`%${filters.phone}%`);
-    clauses.push(`r.phone ILIKE $${values.length}`);
   }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
@@ -227,7 +257,19 @@ export async function listReservationsAdmin(filters: AdminListFilters) {
      ORDER BY r.rental_date DESC, r.id DESC`,
     values
   );
-  return rows;
+
+  let decrypted = rows.map(decryptRow);
+
+  if (filters.name) {
+    const q = filters.name.toLowerCase();
+    decrypted = decrypted.filter((r) => r.name.toLowerCase().includes(q));
+  }
+  if (filters.phone) {
+    const q = filters.phone.replace(/-/g, "");
+    decrypted = decrypted.filter((r) => r.phone.replace(/-/g, "").includes(q));
+  }
+
+  return decrypted;
 }
 
 export async function getReservationByIdAdmin(id: number) {
@@ -238,7 +280,8 @@ export async function getReservationByIdAdmin(id: number) {
      WHERE r.id = $1`,
     [id]
   );
-  return rows[0] ?? null;
+  if (rows.length === 0) return null;
+  return decryptRow(rows[0]);
 }
 
 /** 같은 요청으로 함께 신청된 예약(같은 booking_group_id)을 모두 조회한다. */
@@ -251,67 +294,117 @@ export async function getBookingGroup(groupId: string) {
      ORDER BY r.rental_date`,
     [groupId]
   );
-  return rows;
+  return rows.map(decryptRow);
 }
 
-export async function confirmReservation(id: number) {
+export async function confirmReservation(id: number, adminUsername: string) {
   const { rows } = await pool.query(
-    `UPDATE reservations SET status = 'CONFIRMED', confirmed_at = now(), updated_at = now()
-     WHERE id = $1 AND status = 'PENDING'
-     RETURNING *`,
-    [id]
+    `WITH updated AS (
+       UPDATE reservations SET status = 'CONFIRMED', confirmed_at = now(), confirmed_by = $2, updated_at = now()
+       WHERE id = $1 AND status = 'PENDING'
+       RETURNING *
+     )
+     SELECT updated.*, v.vehicle_name FROM updated JOIN vehicles v ON v.id = updated.vehicle_id`,
+    [id, adminUsername]
   );
   if (rows.length === 0) {
     throw new AppError(400, "예약신청 상태에서만 확정할 수 있습니다.");
   }
-  return rows[0];
+  const result = decryptRow(rows[0]);
+  await logAudit({ adminUsername, action: "CONFIRM", reservationId: result.id, reservationNumber: result.reservation_number });
+  return result;
 }
 
-export async function cancelReservation(id: number) {
+export async function cancelReservation(id: number, adminUsername: string) {
   const { rows } = await pool.query(
-    `UPDATE reservations SET status = 'CANCELLED', cancelled_at = now(), updated_at = now()
-     WHERE id = $1 AND status IN ('PENDING', 'CONFIRMED')
-     RETURNING *`,
-    [id]
+    `WITH updated AS (
+       UPDATE reservations SET status = 'CANCELLED', cancelled_at = now(), cancelled_by = $2, updated_at = now()
+       WHERE id = $1 AND status IN ('PENDING', 'CONFIRMED')
+       RETURNING *
+     )
+     SELECT updated.*, v.vehicle_name FROM updated JOIN vehicles v ON v.id = updated.vehicle_id`,
+    [id, adminUsername]
   );
   if (rows.length === 0) {
     throw new AppError(400, "이미 취소되었거나 존재하지 않는 예약입니다.");
   }
-  return rows[0];
+  const result = decryptRow(rows[0]);
+  await logAudit({ adminUsername, action: "CANCEL", reservationId: result.id, reservationNumber: result.reservation_number });
+  return result;
 }
 
 /** 같은 그룹(여러 날짜 묶음 예약)을 한 번에 확정/취소한다. */
-export async function confirmBookingGroup(groupId: string) {
+export async function confirmBookingGroup(groupId: string, adminUsername: string) {
   const { rows } = await pool.query(
-    `UPDATE reservations SET status = 'CONFIRMED', confirmed_at = now(), updated_at = now()
-     WHERE booking_group_id = $1 AND status = 'PENDING'
-     RETURNING *`,
-    [groupId]
+    `WITH updated AS (
+       UPDATE reservations SET status = 'CONFIRMED', confirmed_at = now(), confirmed_by = $2, updated_at = now()
+       WHERE booking_group_id = $1 AND status = 'PENDING'
+       RETURNING *
+     )
+     SELECT updated.*, v.vehicle_name FROM updated JOIN vehicles v ON v.id = updated.vehicle_id`,
+    [groupId, adminUsername]
   );
   if (rows.length === 0) {
     throw new AppError(400, "예약신청 상태인 예약이 없습니다.");
   }
-  return rows;
+  const results = rows.map(decryptRow);
+  for (const r of results) {
+    await logAudit({ adminUsername, action: "CONFIRM", reservationId: r.id, reservationNumber: r.reservation_number });
+  }
+  return results;
 }
 
-export async function cancelBookingGroup(groupId: string) {
+export async function cancelBookingGroup(groupId: string, adminUsername: string) {
   const { rows } = await pool.query(
-    `UPDATE reservations SET status = 'CANCELLED', cancelled_at = now(), updated_at = now()
-     WHERE booking_group_id = $1 AND status IN ('PENDING', 'CONFIRMED')
-     RETURNING *`,
-    [groupId]
+    `WITH updated AS (
+       UPDATE reservations SET status = 'CANCELLED', cancelled_at = now(), cancelled_by = $2, updated_at = now()
+       WHERE booking_group_id = $1 AND status IN ('PENDING', 'CONFIRMED')
+       RETURNING *
+     )
+     SELECT updated.*, v.vehicle_name FROM updated JOIN vehicles v ON v.id = updated.vehicle_id`,
+    [groupId, adminUsername]
   );
   if (rows.length === 0) {
     throw new AppError(400, "취소할 수 있는 예약이 없습니다.");
   }
-  return rows;
+  const results = rows.map(decryptRow);
+  for (const r of results) {
+    await logAudit({ adminUsername, action: "CANCEL", reservationId: r.id, reservationNumber: r.reservation_number });
+  }
+  return results;
 }
 
-export async function deleteReservation(id: number) {
+/**
+ * PRD 41절 — 완전삭제. 삭제 전 복호화된 내용을 감사로그에 스냅샷으로 남겨, 행이 사라진
+ * 뒤에도 "누가 언제 어떤 예약을 삭제했는지"와 그 내용을 관리자가 조회할 수 있게 한다.
+ */
+export async function deleteReservation(id: number, adminUsername: string) {
+  const existing = await getReservationByIdAdmin(id);
+  if (!existing) {
+    throw new AppError(404, "예약을 찾을 수 없습니다.");
+  }
+
   const { rowCount } = await pool.query(`DELETE FROM reservations WHERE id = $1`, [id]);
   if (rowCount === 0) {
     throw new AppError(404, "예약을 찾을 수 없습니다.");
   }
+
+  await logAudit({
+    adminUsername,
+    action: "DELETE",
+    reservationId: existing.id,
+    reservationNumber: existing.reservation_number,
+    detail: {
+      vehicle_name: existing.vehicle_name,
+      rental_date: existing.rental_date,
+      name: existing.name,
+      department: existing.department,
+      phone: existing.phone,
+      destination: existing.destination,
+      purpose: existing.purpose,
+      status: existing.status,
+    },
+  });
 }
 
 export interface UpdateInput {
@@ -326,14 +419,14 @@ export interface UpdateInput {
 }
 
 /** 관리자 예약 수정 (PRD 23절) — 이용일/차량 변경 시 변경된 조합에 대한 중복예약 검사를 다시 수행한다. */
-export async function updateReservationAdmin(id: number, patch: UpdateInput) {
+export async function updateReservationAdmin(id: number, patch: UpdateInput, adminUsername: string) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
 
     const { rows: currentRows } = await client.query(`SELECT * FROM reservations WHERE id = $1 FOR UPDATE`, [id]);
-    const current = currentRows[0];
-    if (!current) throw new AppError(404, "예약을 찾을 수 없습니다.");
+    if (currentRows.length === 0) throw new AppError(404, "예약을 찾을 수 없습니다.");
+    const current = decryptRow(currentRows[0]);
 
     const nextVehicleId = patch.vehicleId ?? current.vehicle_id;
     const nextDate = patch.rentalDate ?? current.rental_date;
@@ -367,39 +460,62 @@ export async function updateReservationAdmin(id: number, patch: UpdateInput) {
       nextStatus === "CONFIRMED" && current.status !== "CONFIRMED" ? new Date() : current.confirmed_at;
     const cancelledAt =
       nextStatus === "CANCELLED" && current.status !== "CANCELLED" ? new Date() : current.cancelled_at;
+    const confirmedBy = nextStatus === "CONFIRMED" && current.status !== "CONFIRMED" ? adminUsername : current.confirmed_by;
+    const cancelledBy = nextStatus === "CANCELLED" && current.status !== "CANCELLED" ? adminUsername : current.cancelled_by;
+
+    const nextName = patch.name?.trim() ?? current.name;
+    const nextDepartment = patch.department?.trim() ?? current.department;
+    const nextPhone = patch.phone?.trim() ?? current.phone;
+    const nextDestination = patch.destination !== undefined ? patch.destination?.trim() || null : current.destination;
+    const nextPurpose = patch.purpose !== undefined ? patch.purpose?.trim() || null : current.purpose;
 
     const { rows } = await client.query(
-      `UPDATE reservations SET
-         vehicle_id = $1,
-         rental_date = $2,
-         name = $3,
-         department = $4,
-         phone = $5,
-         destination = $6,
-         purpose = $7,
-         status = $8,
-         confirmed_at = $9,
-         cancelled_at = $10,
-         updated_at = now()
-       WHERE id = $11
-       RETURNING *`,
+      `WITH updated AS (
+         UPDATE reservations SET
+           vehicle_id = $1,
+           rental_date = $2,
+           name = $3,
+           department = $4,
+           phone = $5,
+           destination = $6,
+           purpose = $7,
+           status = $8,
+           confirmed_at = $9,
+           cancelled_at = $10,
+           confirmed_by = $11,
+           cancelled_by = $12,
+           updated_at = now()
+         WHERE id = $13
+         RETURNING *
+       )
+       SELECT updated.*, v.vehicle_name FROM updated JOIN vehicles v ON v.id = updated.vehicle_id`,
       [
         nextVehicleId,
         nextDate,
-        patch.name?.trim() ?? current.name,
-        patch.department?.trim() ?? current.department,
-        patch.phone?.trim() ?? current.phone,
-        patch.destination !== undefined ? patch.destination?.trim() || null : current.destination,
-        patch.purpose !== undefined ? patch.purpose?.trim() || null : current.purpose,
+        encrypt(nextName),
+        nextDepartment,
+        encrypt(nextPhone),
+        encryptNullable(nextDestination),
+        encryptNullable(nextPurpose),
         nextStatus,
         confirmedAt,
         cancelledAt,
+        confirmedBy,
+        cancelledBy,
         id,
       ]
     );
 
     await client.query("COMMIT");
-    return rows[0];
+    const result = decryptRow(rows[0]);
+    await logAudit({
+      adminUsername,
+      action: "UPDATE",
+      reservationId: result.id,
+      reservationNumber: result.reservation_number,
+      detail: { before: current, after: result },
+    });
+    return result;
   } catch (err) {
     await client.query("ROLLBACK");
     if ((err as { code?: string }).code === "23505") {
