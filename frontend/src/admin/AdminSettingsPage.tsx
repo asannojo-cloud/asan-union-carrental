@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { api, ApiError } from "../shared/api";
+import PasswordInput from "../shared/PasswordInput";
 
 export default function AdminSettingsPage() {
   const [currentPassword, setCurrentPassword] = useState("");
@@ -31,11 +32,11 @@ export default function AdminSettingsPage() {
       <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">현재 비밀번호</label>
-          <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          <PasswordInput value={currentPassword} onChange={setCurrentPassword} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">새 비밀번호 (8자 이상)</label>
-          <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
+          <PasswordInput value={newPassword} onChange={setNewPassword} className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm" />
         </div>
         {message && <p className="text-sm text-status-confirmed">{message}</p>}
         {error && <p className="text-sm text-red-600">{error}</p>}
