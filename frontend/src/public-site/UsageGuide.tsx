@@ -1,8 +1,5 @@
 import { useState, type ReactNode } from "react";
-
-const ACCOUNT_BANK = "농협";
-const ACCOUNT_NUMBER = "301-0183-3328-41";
-const ACCOUNT_HOLDER = "아산시공무원노동조합";
+import AccountCopyBox from "../shared/AccountCopyBox";
 
 interface Props {
   agreed: boolean;
@@ -11,19 +8,7 @@ interface Props {
 
 /** 차량 이용안내문 + 지정계좌 안내 + 필수 동의 체크박스. */
 export default function UsageGuide({ agreed, onAgreedChange }: Props) {
-  const [copied, setCopied] = useState(false);
   const [expanded, setExpanded] = useState(false);
-
-  async function handleCopyAccount() {
-    const text = `${ACCOUNT_BANK} ${ACCOUNT_NUMBER} (${ACCOUNT_HOLDER})`;
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    } catch {
-      // 클립보드 접근이 막힌 환경(권한 거부 등)에서는 조용히 무시한다 — 계좌번호는 화면에 그대로 보인다.
-    }
-  }
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4">
@@ -78,25 +63,7 @@ export default function UsageGuide({ agreed, onAgreedChange }: Props) {
           ※ 유료/무료사용 모두 유류비, 고속도로통행료는 사용자가 부담
         </Section>
 
-        <div className="rounded-lg bg-white border border-brand-200 p-3">
-          <p className="text-slate-500 mb-1">지정계좌</p>
-          <button
-            type="button"
-            onClick={handleCopyAccount}
-            className="w-full flex items-center justify-between gap-2 text-left"
-          >
-            <span className="font-medium text-slate-900">
-              {ACCOUNT_BANK} {ACCOUNT_NUMBER} ({ACCOUNT_HOLDER})
-            </span>
-            <span
-              className={`shrink-0 text-[11px] font-medium px-2 py-1 rounded-full ${
-                copied ? "bg-status-available/10 text-status-available" : "bg-brand-50 text-brand-700"
-              }`}
-            >
-              {copied ? "복사됨 ✓" : "계좌번호 복사"}
-            </span>
-          </button>
-        </div>
+        <AccountCopyBox />
 
         <Section title="환불규정">
           1. 토요일, 일요일, 공휴일, 하계휴가기간이 포함된 예약의 취소

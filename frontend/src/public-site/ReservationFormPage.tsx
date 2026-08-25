@@ -6,6 +6,7 @@ import { formatDateKorean } from "../shared/formatters";
 import { addDays, dateRange } from "../shared/dateGrid";
 import { PRICE_PER_DAY, MAX_RENTAL_DAYS as MAX_DAYS } from "../shared/pricing";
 import UsageGuide from "./UsageGuide";
+import AccountCopyBox from "../shared/AccountCopyBox";
 
 const PHONE_RE = /^[0-9-]{9,14}$/;
 const WEEKDAY_CODE_BY_INDEX = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"] as const;
@@ -137,6 +138,7 @@ export default function ReservationFormPage() {
             <Row label="방문지역" value={destination || "-"} />
             <Row label="대여목적" value={purpose || "-"} />
           </dl>
+          <AccountCopyBox className="mb-5" />
           {error && <p className="text-sm text-red-600 mb-3">{error}</p>}
           <div className="flex gap-2">
             <button
