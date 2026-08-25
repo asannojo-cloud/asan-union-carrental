@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../shared/api";
 import type { Vehicle, CalendarEntry, WeekdayCode } from "../shared/types";
 import { buildMonthGrid, shiftMonth } from "../shared/dateGrid";
-import { todayKST, formatDateKorean } from "../shared/formatters";
+import { todayKST } from "../shared/formatters";
 
 const WEEKDAY_HEADERS = ["일", "월", "화", "수", "목", "금", "토"];
 const WEEKDAY_CODE_BY_INDEX: WeekdayCode[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
