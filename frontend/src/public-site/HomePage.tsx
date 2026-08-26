@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, type PointerEvent as ReactPointerEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { api } from "../shared/api";
 import type { Vehicle, CalendarEntry, WeekdayCode } from "../shared/types";
 import { buildMonthGrid, shiftMonth, dateRange } from "../shared/dateGrid";
@@ -320,6 +320,13 @@ export default function HomePage() {
           <span className="w-2.5 h-2.5 rounded-full bg-slate-300 inline-block" /> 이용불가
         </span>
       </div>
+
+      <Link
+        to="/reserve/lookup"
+        className="block text-center mt-4 rounded-xl border border-slate-200 bg-white py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+      >
+        📋 예약확인 (내 예약 조회·수정·취소)
+      </Link>
     </div>
   );
 }

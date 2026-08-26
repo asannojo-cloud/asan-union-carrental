@@ -526,3 +526,115 @@ export async function updateReservationAdmin(id: number, patch: UpdateInput, adm
     client.release();
   }
 }
+
+function normalizePhone(phone: string): string {
+  return phone.replace(/[^0-9]/g, "");
+}
+
+/**
+ * 예약번호 + 전화번호로 본인 예약을 조회한다 (로그인이 없는 서비스의 본인 확인 수단).
+ * 존재하지 않는 예약번호와 전화번호 불일치를 같은 메시지로 처리해 예약번호 존재 여부를
+ * 외부에서 추측할 수 없게 한다. 여러 날짜(기간) 예약이면 같은 묶음 전체를 반환한다.
+ */
+export async function lookupOwnReservation(reservationNumber: string, phone: string) {
+  const { rows } = await pool.query(
+    `SELECT r.*, v.vehicle_name FROM reservations r JOIN vehicles v ON v.id = r.vehicle_id
+     WHERE r.reservation_number = $1`,
+    [reservationNumber.trim()]
+  );
+  if (rows.length === 0) {
+    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+  }
+  const found = decryptRow(rows[0]);
+  if (normalizePhone(found.phone) !== normalizePhone(phone)) {
+    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+  }
+  if (found.booking_group_id) {
+    return getBookingGroup(found.booking_group_id);
+  }
+  return [found];
+}
+
+export interface SelfUpdateInput {
+  name?: string;
+  department?: string;
+  phone?: string;
+  destination?: string | null;
+  purpose?: string | null;
+}
+
+/**
+ * 사용자 본인이 자신의 예약을 직접 수정한다. 이용일/차량 변경은 중복예약 재검증이 복잡해지므로
+ * 지원하지 않는다(변경이 필요하면 취소 후 재신청 안내). 관리자 확인 전(PENDING) 상태에서만 허용한다.
+ */
+export async function updateOwnReservation(reservationNumber: string, verifyPhone: string, patch: SelfUpdateInput) {
+  const { rows } = await pool.query(
+    `SELECT r.*, v.vehicle_name FROM reservations r JOIN vehicles v ON v.id = r.vehicle_id
+     WHERE r.reservation_number = $1`,
+    [reservationNumber.trim()]
+  );
+  if (rows.length === 0) {
+    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+  }
+  const current = decryptRow(rows[0]);
+  if (normalizePhone(current.phone) !== normalizePhone(verifyPhone)) {
+    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+  }
+  if (current.status !== "PENDING") {
+    throw new AppError(400, "예약신청 상태에서만 직접 수정할 수 있습니다. 그 외에는 문의해주세요.");
+  }
+
+  const nextName = patch.name?.trim() || current.name;
+  const nextDepartment = patch.department?.trim() || current.department;
+  const nextPhone = patch.phone?.trim() || current.phone;
+  const nextDestination = patch.destination !== undefined ? patch.destination?.trim() || null : current.destination;
+  const nextPurpose = patch.purpose !== undefined ? patch.purpose?.trim() || null : current.purpose;
+
+  if (!PHONE_RE.test(nextPhone)) {
+    throw new AppError(400, "올바른 전화번호를 입력해주세요.");
+  }
+
+  // 여러 날짜(기간)로 함께 신청한 예약이면, 신청자 정보는 같은 묶음의 모든 날짜에 함께 반영한다.
+  const { rows: updatedRows } = await pool.query(
+    `WITH updated AS (
+       UPDATE reservations SET name = $1, department = $2, phone = $3, destination = $4, purpose = $5, updated_at = now()
+       WHERE ${current.booking_group_id ? "booking_group_id = $6" : "id = $6"}
+       RETURNING *
+     )
+     SELECT updated.*, v.vehicle_name FROM updated JOIN vehicles v ON v.id = updated.vehicle_id
+     ORDER BY updated.rental_date`,
+    [
+      encrypt(nextName),
+      nextDepartment,
+      encrypt(nextPhone),
+      encryptNullable(nextDestination),
+      encryptNullable(nextPurpose),
+      current.booking_group_id ?? current.id,
+    ]
+  );
+  const results = updatedRows.map(decryptRow);
+  for (const r of results) {
+    await logAudit({ adminUsername: "user", action: "UPDATE", reservationId: r.id, reservationNumber: r.reservation_number });
+  }
+  return results;
+}
+
+/** 사용자 본인이 자신의 예약을 취소한다. 여러 날짜(기간) 묶음이면 전체를 함께 취소한다. */
+export async function cancelOwnReservation(reservationNumber: string, verifyPhone: string) {
+  const { rows } = await pool.query(`SELECT * FROM reservations WHERE reservation_number = $1`, [reservationNumber.trim()]);
+  if (rows.length === 0) {
+    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+  }
+  const current = decryptRow(rows[0]);
+  if (normalizePhone(current.phone) !== normalizePhone(verifyPhone)) {
+    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+  }
+  if (current.status === "CANCELLED") {
+    throw new AppError(400, "이미 취소된 예약입니다.");
+  }
+
+  if (current.booking_group_id) {
+    return cancelBookingGroup(current.booking_group_id, "user");
+  }
+  return [await cancelReservation(current.id, "user")];
+}

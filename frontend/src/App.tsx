@@ -4,6 +4,7 @@ import PublicLayout from "./public-site/PublicLayout";
 import HomePage from "./public-site/HomePage";
 import ReservationFormPage from "./public-site/ReservationFormPage";
 import ReservationCompletePage from "./public-site/ReservationCompletePage";
+import ReservationLookupPage from "./public-site/ReservationLookupPage";
 
 import { AdminSessionProvider } from "./admin/AdminSessionContext";
 import AdminLoginPage from "./admin/AdminLoginPage";
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/reserve" element={<ReservationFormPage />} />
         <Route path="/reserve/complete" element={<ReservationCompletePage />} />
+        <Route path="/reserve/lookup" element={<ReservationLookupPage />} />
       </Route>
 
       <Route

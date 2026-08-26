@@ -1,7 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
 import { AppError } from "../../middleware/errorHandler";
-import { createReservation, getCalendarStatus } from "./reservations.service";
+import { lookupRateLimiter } from "../../middleware/rateLimit";
+import {
+  createReservation,
+  getCalendarStatus,
+  lookupOwnReservation,
+  updateOwnReservation,
+  cancelOwnReservation,
+} from "./reservations.service";
 
 export const publicReservationsRouter = Router();
 
@@ -24,6 +31,22 @@ publicReservationsRouter.get("/calendar", async (req, res) => {
   );
 });
 
+// 개인정보는 신청 본인 확인용으로만 되돌려주고, 다른 사용자를 조회하는 API는 별도로 없음(PRD 25절).
+function toSummary(reservation: any) {
+  return {
+    reservationNumber: reservation.reservation_number,
+    vehicleId: reservation.vehicle_id,
+    vehicleName: reservation.vehicle_name,
+    rentalDate: reservation.rental_date,
+    name: reservation.name,
+    department: reservation.department,
+    phone: reservation.phone,
+    destination: reservation.destination,
+    purpose: reservation.purpose,
+    status: reservation.status,
+  };
+}
+
 const createSchema = z
   .object({
     vehicleId: z.coerce.number().int(),
@@ -45,19 +68,48 @@ publicReservationsRouter.post("/", async (req, res) => {
   }
 
   const reservations = await createReservation(parsed.data, { createdBy: "user" });
+  res.status(201).json(reservations.map(toSummary));
+});
 
-  // PRD 25절 — 응답에도 개인정보는 신청 본인 확인용으로만 되돌려주고 다른 사용자 조회 API는 별도로 없음.
-  res.status(201).json(
-    reservations.map((reservation: any) => ({
-      reservationNumber: reservation.reservation_number,
-      vehicleId: reservation.vehicle_id,
-      rentalDate: reservation.rental_date,
-      name: reservation.name,
-      department: reservation.department,
-      phone: reservation.phone,
-      destination: reservation.destination,
-      purpose: reservation.purpose,
-      status: reservation.status,
-    }))
-  );
+const lookupSchema = z.object({
+  reservationNumber: z.string().min(1),
+  phone: z.string().min(1),
+});
+
+// 로그인이 없는 서비스에서 "예약번호 + 전화번호"로 본인 확인 후 예약을 조회한다.
+publicReservationsRouter.post("/lookup", lookupRateLimiter, async (req, res) => {
+  const parsed = lookupSchema.safeParse(req.body);
+  if (!parsed.success) throw new AppError(400, "예약번호와 전화번호를 입력해주세요.");
+  const reservations = await lookupOwnReservation(parsed.data.reservationNumber, parsed.data.phone);
+  res.json(reservations.map(toSummary));
+});
+
+const selfUpdateSchema = z.object({
+  verifyPhone: z.string().min(1),
+  name: z.string().min(1).max(50).optional(),
+  department: z.string().min(1).max(50).optional(),
+  phone: z.string().min(1).max(20).optional(),
+  destination: z.string().max(100).optional().nullable(),
+  purpose: z.string().max(300).optional().nullable(),
+});
+
+// 본인이 자신의 예약(신청 상태일 때만)을 직접 수정한다. 이용일/차량 변경은 지원하지 않는다.
+publicReservationsRouter.patch("/:reservationNumber", lookupRateLimiter, async (req, res) => {
+  const parsed = selfUpdateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new AppError(400, parsed.error.issues[0]?.message ?? "입력값을 확인해주세요.");
+  }
+  const { verifyPhone, ...patch } = parsed.data;
+  const results = await updateOwnReservation(req.params.reservationNumber, verifyPhone, patch);
+  res.json(results.map(toSummary));
+});
+
+const selfCancelSchema = z.object({ verifyPhone: z.string().min(1) });
+
+// 본인이 자신의 예약을 취소한다 (여러 날짜 묶음이면 전체 취소).
+publicReservationsRouter.patch("/:reservationNumber/cancel", lookupRateLimiter, async (req, res) => {
+  const parsed = selfCancelSchema.safeParse(req.body);
+  if (!parsed.success) throw new AppError(400, "본인확인 정보를 확인해주세요.");
+  const results = await cancelOwnReservation(req.params.reservationNumber, parsed.data.verifyPhone);
+  res.json(results.map(toSummary));
 });

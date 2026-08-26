@@ -18,6 +18,7 @@ export interface CalendarEntry {
 export interface ReservationSummary {
   reservationNumber: string;
   vehicleId: number;
+  vehicleName?: string;
   rentalDate: string;
   name: string;
   department: string;
