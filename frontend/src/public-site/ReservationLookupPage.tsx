@@ -4,10 +4,14 @@ import { api, ApiError } from "../shared/api";
 import type { ReservationSummary } from "../shared/types";
 import { formatDateKorean, STATUS_LABELS } from "../shared/formatters";
 
+type Phase = "search" | "list" | "detail";
+
 export default function ReservationLookupPage() {
-  const [reservationNumber, setReservationNumber] = useState("");
+  const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
-  const [reservations, setReservations] = useState<ReservationSummary[] | null>(null);
+  const [phase, setPhase] = useState<Phase>("search");
+  const [groups, setGroups] = useState<ReservationSummary[][]>([]);
+  const [selected, setSelected] = useState<ReservationSummary[] | null>(null);
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: "", department: "", phone: "", destination: "", purpose: "" });
   const [error, setError] = useState<string | null>(null);
@@ -15,23 +19,20 @@ export default function ReservationLookupPage() {
 
   async function handleSearch(e: FormEvent) {
     e.preventDefault();
-    if (!reservationNumber.trim() || !phone.trim()) return;
+    if (!name.trim() || !phone.trim()) return;
     setError(null);
     setSubmitting(true);
     try {
-      const data = await api.post<ReservationSummary[]>("/reservations/lookup", {
-        reservationNumber: reservationNumber.trim(),
+      const data = await api.post<ReservationSummary[][]>("/reservations/lookup", {
+        name: name.trim(),
         phone: phone.trim(),
       });
-      setReservations(data);
-      const first = data[0];
-      setForm({
-        name: first.name,
-        department: first.department,
-        phone: first.phone,
-        destination: first.destination ?? "",
-        purpose: first.purpose ?? "",
-      });
+      setGroups(data);
+      if (data.length === 1) {
+        openGroup(data[0]);
+      } else {
+        setPhase("list");
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "조회 중 오류가 발생했습니다.");
     } finally {
@@ -39,17 +40,34 @@ export default function ReservationLookupPage() {
     }
   }
 
-  function reset() {
-    setReservations(null);
+  function openGroup(group: ReservationSummary[]) {
+    setSelected(group);
+    const first = group[0];
+    setForm({
+      name: first.name,
+      department: first.department,
+      phone: first.phone,
+      destination: first.destination ?? "",
+      purpose: first.purpose ?? "",
+    });
     setEditing(false);
+    setError(null);
+    setPhase("detail");
+  }
+
+  function backToSearch() {
+    setPhase("search");
+    setGroups([]);
+    setSelected(null);
     setError(null);
   }
 
   async function handleSaveEdit() {
+    if (!selected) return;
     setError(null);
     setSubmitting(true);
     try {
-      const data = await api.patch<ReservationSummary[]>(`/reservations/${reservationNumber.trim()}`, {
+      const data = await api.patch<ReservationSummary[]>(`/reservations/${selected[0].reservationNumber}`, {
         verifyPhone: phone.trim(),
         name: form.name,
         department: form.department,
@@ -57,7 +75,7 @@ export default function ReservationLookupPage() {
         destination: form.destination,
         purpose: form.purpose,
       });
-      setReservations(data);
+      setSelected(data);
       setEditing(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "수정 중 오류가 발생했습니다.");
@@ -67,14 +85,15 @@ export default function ReservationLookupPage() {
   }
 
   async function handleCancel() {
+    if (!selected) return;
     if (!window.confirm("정말로 이 예약을 취소하시겠습니까?")) return;
     setError(null);
     setSubmitting(true);
     try {
-      const data = await api.patch<ReservationSummary[]>(`/reservations/${reservationNumber.trim()}/cancel`, {
+      const data = await api.patch<ReservationSummary[]>(`/reservations/${selected[0].reservationNumber}/cancel`, {
         verifyPhone: phone.trim(),
       });
-      setReservations(data);
+      setSelected(data);
       setEditing(false);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "취소 중 오류가 발생했습니다.");
@@ -83,19 +102,27 @@ export default function ReservationLookupPage() {
     }
   }
 
-  if (!reservations) {
+  function periodLabelOf(group: ReservationSummary[]) {
+    const first = group[0];
+    const last = group[group.length - 1];
+    return group.length === 1
+      ? formatDateKorean(first.rentalDate)
+      : `${formatDateKorean(first.rentalDate)} ~ ${formatDateKorean(last.rentalDate)} (${group.length}일)`;
+  }
+
+  if (phase === "search") {
     return (
       <div>
         <h2 className="text-lg font-bold text-slate-900 mb-1">예약확인</h2>
-        <p className="text-sm text-slate-500 mb-4">예약 시 받으신 예약번호와 전화번호를 입력하면 예약 내용을 확인·수정·취소할 수 있습니다.</p>
+        <p className="text-sm text-slate-500 mb-4">예약 시 입력하신 이름과 전화번호를 입력하면 예약 내용을 확인·수정·취소할 수 있습니다.</p>
         <form onSubmit={handleSearch} className="bg-white rounded-2xl border border-slate-200 p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">예약번호</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">이름</label>
             <input
               className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
-              value={reservationNumber}
-              onChange={(e) => setReservationNumber(e.target.value)}
-              placeholder="예: R20260828-0001"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="홍길동"
             />
           </div>
           <div>
@@ -124,16 +151,40 @@ export default function ReservationLookupPage() {
     );
   }
 
-  const first = reservations[0];
-  const last = reservations[reservations.length - 1];
-  const periodLabel =
-    reservations.length === 1
-      ? formatDateKorean(first.rentalDate)
-      : `${formatDateKorean(first.rentalDate)} ~ ${formatDateKorean(last.rentalDate)} (${reservations.length}일)`;
+  if (phase === "list") {
+    return (
+      <div>
+        <button onClick={backToSearch} className="text-sm text-slate-400 mb-3">‹ 다시 조회</button>
+        <h2 className="text-lg font-bold text-slate-900 mb-4">예약확인 — {groups.length}건 조회됨</h2>
+        <div className="space-y-2">
+          {groups.map((group, i) => (
+            <button
+              key={i}
+              onClick={() => openGroup(group)}
+              className="w-full text-left bg-white rounded-2xl border border-slate-200 p-4 hover:border-brand-300"
+            >
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-slate-900 text-sm">{group[0].vehicleName ?? group[0].vehicleId}</p>
+                <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-slate-100">{STATUS_LABELS[group[0].status]}</span>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">{periodLabelOf(group)}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // phase === "detail"
+  if (!selected) return null;
+  const first = selected[0];
+  const periodLabel = periodLabelOf(selected);
 
   return (
     <div>
-      <button onClick={reset} className="text-sm text-slate-400 mb-3">‹ 다시 조회</button>
+      <button onClick={() => (groups.length > 1 ? setPhase("list") : backToSearch())} className="text-sm text-slate-400 mb-3">
+        ‹ {groups.length > 1 ? "목록으로" : "다시 조회"}
+      </button>
       <h2 className="text-lg font-bold text-slate-900 mb-4">예약확인</h2>
 
       <div className="bg-white rounded-2xl border border-slate-200 p-5">

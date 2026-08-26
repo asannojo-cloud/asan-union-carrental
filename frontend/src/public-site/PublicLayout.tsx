@@ -4,14 +4,26 @@ export default function PublicLayout() {
   return (
     <div className="min-h-screen flex flex-col bg-slate-100">
       <header className="bg-brand-900 text-white">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-brand-200">아산시공무원노동조합</p>
-            <h1 className="text-lg font-bold">차량 렌트사업</h1>
+        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5">
+            <a
+              href="https://agongno-membercard.onrender.com"
+              className="shrink-0 w-8 h-8 rounded-full bg-brand-800 hover:bg-brand-700 flex items-center justify-center"
+              aria-label="조합원증 홈으로 이동"
+              title="조합원증 홈으로 이동"
+            >
+              <svg viewBox="0 0 24 24" className="w-4.5 h-4.5" fill="currentColor" aria-hidden="true">
+                <path d="M12 3.2 3 10.5V21a1 1 0 001 1h5a1 1 0 001-1v-5h4v5a1 1 0 001 1h5a1 1 0 001-1V10.5L12 3.2z" />
+              </svg>
+            </a>
+            <div>
+              <p className="text-xs text-brand-200">아산시공무원노동조합</p>
+              <h1 className="text-lg font-bold">차량 렌트사업</h1>
+            </div>
           </div>
           <Link
             to="/admin/login"
-            className="text-xs text-brand-100 border border-brand-600 rounded-full px-3 py-1.5 hover:bg-brand-800"
+            className="text-xs text-brand-100 border border-brand-600 rounded-full px-3 py-1.5 hover:bg-brand-800 shrink-0"
           >
             관리자 페이지
           </Link>

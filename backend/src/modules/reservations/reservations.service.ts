@@ -532,27 +532,37 @@ function normalizePhone(phone: string): string {
 }
 
 /**
- * 예약번호 + 전화번호로 본인 예약을 조회한다 (로그인이 없는 서비스의 본인 확인 수단).
- * 존재하지 않는 예약번호와 전화번호 불일치를 같은 메시지로 처리해 예약번호 존재 여부를
- * 외부에서 추측할 수 없게 한다. 여러 날짜(기간) 예약이면 같은 묶음 전체를 반환한다.
+ * 이름 + 전화번호로 본인 예약을 조회한다 (로그인이 없는 서비스의 본인 확인 수단).
+ * 이름/전화번호는 암호화되어 있어 SQL로 걸러낼 수 없으므로 전체를 복호화한 뒤 정확히
+ * 일치하는 행만 남긴다. 여러 번 예약했거나 기간(여러 날짜) 예약이 있으면 묶음별로 그룹지어
+ * 반환하며, 최근 이용일 순으로 정렬한다. 일치하는 예약이 없을 때의 메시지는 "이름이 틀렸는지
+ * 전화번호가 틀렸는지" 구분하지 않아 정보 추측을 방지한다.
  */
-export async function lookupOwnReservation(reservationNumber: string, phone: string) {
+export async function lookupOwnReservations(name: string, phone: string) {
+  const trimmedName = name.trim();
+  const normalizedPhone = normalizePhone(phone);
+
   const { rows } = await pool.query(
-    `SELECT r.*, v.vehicle_name FROM reservations r JOIN vehicles v ON v.id = r.vehicle_id
-     WHERE r.reservation_number = $1`,
-    [reservationNumber.trim()]
+    `SELECT r.*, v.vehicle_name FROM reservations r JOIN vehicles v ON v.id = r.vehicle_id`
   );
-  if (rows.length === 0) {
-    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+  const matched = rows
+    .map(decryptRow)
+    .filter((r) => r.name.trim() === trimmedName && normalizePhone(r.phone) === normalizedPhone);
+
+  if (matched.length === 0) {
+    throw new AppError(404, "일치하는 예약을 찾을 수 없습니다. 이름과 전화번호를 다시 확인해주세요.");
   }
-  const found = decryptRow(rows[0]);
-  if (normalizePhone(found.phone) !== normalizePhone(phone)) {
-    throw new AppError(404, "예약을 찾을 수 없습니다. 예약번호와 전화번호를 다시 확인해주세요.");
+
+  const groups = new Map<string, typeof matched>();
+  for (const r of matched) {
+    const key = r.booking_group_id ?? `single-${r.id}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(r);
   }
-  if (found.booking_group_id) {
-    return getBookingGroup(found.booking_group_id);
-  }
-  return [found];
+
+  return [...groups.values()]
+    .map((group) => group.sort((a, b) => (a.rental_date < b.rental_date ? -1 : 1)))
+    .sort((a, b) => (a[0].rental_date < b[0].rental_date ? 1 : -1));
 }
 
 export interface SelfUpdateInput {

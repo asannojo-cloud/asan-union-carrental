@@ -5,7 +5,7 @@ import { lookupRateLimiter } from "../../middleware/rateLimit";
 import {
   createReservation,
   getCalendarStatus,
-  lookupOwnReservation,
+  lookupOwnReservations,
   updateOwnReservation,
   cancelOwnReservation,
 } from "./reservations.service";
@@ -72,16 +72,17 @@ publicReservationsRouter.post("/", async (req, res) => {
 });
 
 const lookupSchema = z.object({
-  reservationNumber: z.string().min(1),
+  name: z.string().min(1),
   phone: z.string().min(1),
 });
 
-// 로그인이 없는 서비스에서 "예약번호 + 전화번호"로 본인 확인 후 예약을 조회한다.
+// 로그인이 없는 서비스에서 "이름 + 전화번호"로 본인 확인 후 예약을 조회한다.
+// 여러 번 예약했다면 묶음(기간 예약 포함)별로 나뉜 배열을 반환한다.
 publicReservationsRouter.post("/lookup", lookupRateLimiter, async (req, res) => {
   const parsed = lookupSchema.safeParse(req.body);
-  if (!parsed.success) throw new AppError(400, "예약번호와 전화번호를 입력해주세요.");
-  const reservations = await lookupOwnReservation(parsed.data.reservationNumber, parsed.data.phone);
-  res.json(reservations.map(toSummary));
+  if (!parsed.success) throw new AppError(400, "이름과 전화번호를 입력해주세요.");
+  const groups = await lookupOwnReservations(parsed.data.name, parsed.data.phone);
+  res.json(groups.map((group) => group.map(toSummary)));
 });
 
 const selfUpdateSchema = z.object({
