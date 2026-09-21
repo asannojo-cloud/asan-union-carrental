@@ -5,6 +5,7 @@ import type { Vehicle, CalendarEntry, WeekdayCode } from "../shared/types";
 import { buildMonthGrid, shiftMonth, dateRange } from "../shared/dateGrid";
 import { todayKST, formatDateKorean } from "../shared/formatters";
 import { PRICE_PER_DAY } from "../shared/pricing";
+import AccountCopyBox from "../shared/AccountCopyBox";
 
 const WEEKDAY_HEADERS = ["일", "월", "화", "수", "목", "금", "토"];
 const WEEKDAY_CODE_BY_INDEX: WeekdayCode[] = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
@@ -179,6 +180,7 @@ export default function HomePage() {
           <p className="font-medium text-slate-900">💰 이용요금</p>
           <p>· 1일: 5만원</p>
           <p>※ 1박 2일의 경우 5만원이 아닌 2일 대여이기 때문에 10만원입니다.</p>
+          <AccountCopyBox className="mt-2" />
         </div>
         <div>
           <p className="font-medium text-slate-900">📅 대여 기간 안내</p>

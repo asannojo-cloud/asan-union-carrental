@@ -8,7 +8,9 @@ interface Props {
 
 /** 차량 이용안내문 + 지정계좌 안내 + 필수 동의 체크박스. */
 export default function UsageGuide({ agreed, onAgreedChange }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  // 이용요금·환불규정·지정계좌 등 필수 확인 내용이라 클릭하지 않아도 바로 보이도록 기본값을 펼침으로 둔다
+  // (2026-09: 눌러야만 보이던 걸 안 눌러도 보이게 해달라는 요청). 접는 기능 자체는 그대로 남겨둔다.
+  const [expanded, setExpanded] = useState(true);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-4">

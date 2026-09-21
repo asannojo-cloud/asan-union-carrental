@@ -202,6 +202,7 @@ export default function ReservationFormPage() {
           {periodLabel} · <span className="font-medium text-brand-700">{totalPrice.toLocaleString()}원</span>
         </p>
         {rangeWarning && <p className="text-xs text-red-500 mt-2">{rangeWarning}</p>}
+        <AccountCopyBox className="mt-3" />
       </div>
 
       <div className="mb-4">
