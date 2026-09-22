@@ -22,6 +22,7 @@ export interface CreateOptions {
   createdBy: string; // 'user' 또는 관리자 username
   forceStatus?: "PENDING" | "CONFIRMED"; // 관리자 직접등록은 CONFIRMED로 저장 (PRD 21절)
   allowPastDate?: boolean; // 관리자 전용, 기본값 false (PRD 31절)
+  bypassWeekdayCheck?: boolean; // 관리자 전용 — 차량의 일반 이용 가능 요일 제한과 무관하게 등록 가능
 }
 
 const PHONE_RE = /^[0-9-]{9,14}$/;
@@ -80,10 +81,13 @@ async function validateBeforeCreate(input: ReservationInput, opts: CreateOptions
   }
 
   // 4. 차량 이용 가능 요일 — 기간에 포함된 모든 날짜가 이용 가능해야 한다.
-  for (const d of dates) {
-    const weekday = weekdayOf(d);
-    if (!vehicle.available_weekdays.includes(weekday)) {
-      throw new AppError(400, `${vehicle.vehicle_name}는(은) ${formatDateKorean(d)}에 이용할 수 없습니다.`);
+  // 관리자는 전화/방문 접수 등 예외적으로 평소 요일 제한과 무관하게 등록할 수 있다 (bypassWeekdayCheck).
+  if (!opts.bypassWeekdayCheck) {
+    for (const d of dates) {
+      const weekday = weekdayOf(d);
+      if (!vehicle.available_weekdays.includes(weekday)) {
+        throw new AppError(400, `${vehicle.vehicle_name}는(은) ${formatDateKorean(d)}에 이용할 수 없습니다.`);
+      }
     }
   }
 
@@ -437,10 +441,7 @@ export async function updateReservationAdmin(id: number, patch: UpdateInput, adm
       if (!isValidDateString(nextDate)) throw new AppError(400, "올바른 날짜를 선택해주세요.");
       const vehicle = await getVehicleById(nextVehicleId);
       if (!vehicle || !vehicle.active) throw new AppError(400, "선택한 차량을 이용할 수 없습니다.");
-      const weekday = weekdayOf(nextDate);
-      if (!vehicle.available_weekdays.includes(weekday)) {
-        throw new AppError(400, `${vehicle.vehicle_name}는(은) 해당 요일에 이용할 수 없습니다.`);
-      }
+      // 관리자 수정은 생성과 마찬가지로 차량의 일반 이용 가능 요일 제한을 받지 않는다.
       const dup = await client.query(
         `SELECT id FROM reservations
          WHERE vehicle_id = $1 AND rental_date = $2 AND status <> 'CANCELLED' AND id <> $3

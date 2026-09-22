@@ -114,6 +114,7 @@ adminReservationsRouter.post("/", async (req, res) => {
     createdBy: req.session.auth!.username,
     forceStatus: "CONFIRMED",
     allowPastDate,
+    bypassWeekdayCheck: true,
   });
   res.status(201).json(reservations);
 });
