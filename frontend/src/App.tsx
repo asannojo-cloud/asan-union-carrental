@@ -16,6 +16,7 @@ import AdminReservationCreatePage from "./admin/AdminReservationCreatePage";
 import AdminCalendarPage from "./admin/AdminCalendarPage";
 import AdminSettingsPage from "./admin/AdminSettingsPage";
 import AdminAuditLogPage from "./admin/AdminAuditLogPage";
+import AdminVehiclesPage from "./admin/AdminVehiclesPage";
 
 export default function App() {
   return (
@@ -39,6 +40,7 @@ export default function App() {
                 <Route path="reservations" element={<AdminReservationsPage />} />
                 <Route path="reservations/new" element={<AdminReservationCreatePage />} />
                 <Route path="reservations/:id" element={<AdminReservationDetailPage />} />
+                <Route path="vehicles" element={<AdminVehiclesPage />} />
                 <Route path="settings" element={<AdminSettingsPage />} />
                 <Route path="audit-logs" element={<AdminAuditLogPage />} />
               </Route>
